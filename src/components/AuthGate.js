@@ -1,8 +1,19 @@
 import { useState } from 'react';
 import { signIn, signUp } from '../lib/auth';
+import FavouritLoader from './FavouritLoader';
+
+const AUTH_TIMEOUT_MS = 15000;
 
 function Logo() {
   return <div className="logo"><span>Favour</span><i>it</i></div>;
+}
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
 }
 
 export default function AuthGate() {
@@ -25,15 +36,17 @@ export default function AuthGate() {
     setBusy(true);
     try {
       const result = mode === 'login'
-        ? await signIn(email.trim(), password)
-        : await signUp(email.trim(), password, displayName.trim());
+        ? await withTimeout(signIn(email.trim(), password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.')
+        : await withTimeout(signUp(email.trim(), password, displayName.trim()), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
       if (result.error) throw result.error;
       if (mode === 'signup' && !result.data?.session) {
         setMessage('Account created. Check your email to confirm your account, then sign in.');
         setMode('login');
         setPassword('');
       } else {
-        setMessage('Signed in. Loading your Favourit account…');
+        // AppShell listens for the Supabase auth event and will move into the
+        // account bootstrap loader automatically. Do not fake a second login.
+        setMessage('Signed in successfully.');
       }
     } catch (err) {
       setError(err.message || 'Authentication failed.');
@@ -41,6 +54,13 @@ export default function AuthGate() {
       setBusy(false);
     }
   };
+
+  if (busy) {
+    return <FavouritLoader
+      title={mode === 'signup' ? 'Creating your Favourit account' : 'Signing you in'}
+      subtitle={mode === 'signup' ? 'Setting up your profile and secure wallet…' : 'Verifying your credentials securely…'}
+    />;
+  }
 
   return (
     <section className="auth-page">
@@ -54,7 +74,7 @@ export default function AuthGate() {
         <input className="auth-input" value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
         {error && <div className="auth-error">{error}</div>}
         {message && <div className="auth-message">{message}</div>}
-        <button className="primary full" disabled={busy} type="submit">{busy ? 'Please wait…' : mode === 'login' ? 'Sign in →' : 'Create account →'}</button>
+        <button className="primary full" disabled={busy} type="submit">{mode === 'login' ? 'Sign in →' : 'Create account →'}</button>
         <div className="auth-switch">
           {mode === 'login' ? 'New to Favourit?' : 'Already have an account?'}{' '}
           <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setMessage(''); }}>
