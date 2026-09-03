@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import './ActivityCenter.css';
 import { supabase } from '../lib/supabase';
 import { getNotifications, markAllNotificationsRead, markConversationRead, markNotificationRead } from '../lib/notifications';
-import { getConversationMessages, getOrCreateOrderConversation, sendMessage } from '../lib/messaging';
+import { getConversationMessages, sendMessage } from '../lib/messaging';
 
 function timeAgo(value) {
   const seconds = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
