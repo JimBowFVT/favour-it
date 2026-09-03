@@ -9,7 +9,6 @@ import { getCurrentProfile } from './lib/profile';
 import { claimDailyReward, getMyWallet } from './lib/wallet';
 
 const BOOTSTRAP_TIMEOUT_MS = 12000;
-const ADMIN_EMAIL = 'adamzoharlevi@gmail.com';
 
 function withTimeout(promise, ms, message = 'Request timed out. Please try again.') {
   let timer;
