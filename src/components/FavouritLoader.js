@@ -1,3 +1,5 @@
+import './FavouritLoader.css';
+
 export default function FavouritLoader({ title = 'Preparing your Favourit account', subtitle = 'Securing your session and loading your wallet…' }) {
   return (
     <main className="favourit-loader" role="status" aria-live="polite" aria-label={title}>
