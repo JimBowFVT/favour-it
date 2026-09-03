@@ -5,6 +5,7 @@ import ActivityCenter from './components/ActivityCenter';
 import FavouritLoader from './components/FavouritLoader';
 import AdminPanel from './components/AdminPanel';
 import UsernameGate from './components/UsernameGate';
+import UsernameManager from './components/UsernameManager';
 import DirectMessaging from './components/DirectMessaging';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
@@ -57,5 +58,5 @@ export default function AppShell() {
   // boolean flag is retained for backward compatibility but is not allowed to
   // lock existing users out of the app.
   if (!usernameStatus?.username) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profile => { localStorage.setItem(usernameCacheKey(session.user.id), profile.username); setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true }); }} />;
-  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><DirectMessaging session={session} usernameStatus={usernameStatus} /><ActivityCenter /></>;
+  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem(usernameCacheKey(session.user.id), status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} usernameStatus={usernameStatus} /><ActivityCenter /></>;
 }
