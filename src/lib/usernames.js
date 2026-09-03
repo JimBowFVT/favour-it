@@ -12,6 +12,12 @@ export async function completeUsername(username) {
   return Array.isArray(data) ? data[0] || null : data;
 }
 
+export async function changeUsername(username) {
+  const { data, error } = await supabase.rpc('change_username', { p_username: username });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] || null : data;
+}
+
 export function suggestUsernames({ displayName = '', email = '' } = {}) {
   const clean = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const first = clean(displayName).slice(0, 12);
