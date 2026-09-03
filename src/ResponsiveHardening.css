@@ -1,0 +1,36 @@
+/* Favourit responsive hardening layer. Keeps the existing visual language while protecting small screens. */
+html,body,#root{min-width:0;width:100%;}
+img,svg,video,canvas{max-width:100%;height:auto;}
+input,textarea,select{max-width:100%;}
+@media (max-width:700px){
+  .page-section{min-height:0;}
+  .page-title{margin-bottom:30px;}
+  .page-title h1,.form-header h1,.premium-hero h1,.profile-hero h1{overflow-wrap:anywhere;}
+  .search-row{align-items:stretch;}
+  .search-box{min-width:0;}
+  .filter-button{flex:none;}
+  .detail-layout{min-width:0;}
+  .detail-description,.order-detail{min-width:0;}
+  .buy-card{width:100%;}
+  .form-actions{flex-direction:column-reverse;}
+  .form-actions button{width:100%;}
+  .order-row{min-width:0;grid-template-columns:auto minmax(0,1fr) auto;}
+  .order-row .order-amount,.order-row .status,.order-row .order-arrow{display:none;}
+  .wallet-mini{margin-top:18px;}
+  .profile-main{min-width:0;}
+  .profile-main>div:last-child{min-width:0;}
+  .toast{left:18px;right:18px;bottom:18px;}
+  footer{gap:14px;}
+}
+@media (max-width:420px){
+  .page-section{padding-top:40px;padding-bottom:55px;}
+  .page-title h1,.form-header h1,.premium-hero h1{font-size:38px;line-height:1.08;}
+  .detail-description h1{font-size:25px;}
+  .detail-art{height:220px;}
+  .buy-card{padding:20px;}
+  .form-card{padding:17px;}
+  .category-row{margin-right:-14px;padding-right:14px;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important;}
+}
