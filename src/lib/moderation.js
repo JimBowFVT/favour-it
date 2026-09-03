@@ -26,3 +26,26 @@ export async function getMiddlemanAssignment(orderId) {
   if (error) throw error;
   return data;
 }
+
+export async function grantMiddlemanRole(userId) {
+  const { error } = await supabase.rpc('grant_middleman_role', {
+    p_user_id: userId,
+  });
+  if (error) throw error;
+}
+
+export async function revokeMiddlemanRole(userId) {
+  const { error } = await supabase.rpc('revoke_middleman_role', {
+    p_user_id: userId,
+  });
+  if (error) throw error;
+}
+
+export async function listModerators() {
+  const { data, error } = await supabase
+    .from('moderators')
+    .select('user_id, role, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
