@@ -4,9 +4,8 @@ import FavouritLoader from './FavouritLoader';
 
 const AUTH_TIMEOUT_MS = 15000;
 const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
-
 function Logo() { return <div className="logo"><span>Favour</span><i>it</i></div>; }
-function withTimeout(promise, ms, message) { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
+function withTimeout(promise, ms, message) { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
 
 export default function AuthGate() {
   const [mode, setMode] = useState('login'); const [displayName, setDisplayName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const [error, setError] = useState('');
@@ -18,14 +17,11 @@ export default function AuthGate() {
     setBusy(true);
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const result = mode === 'login'
-        ? await withTimeout(signIn(cleanEmail, password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.')
-        : await withTimeout(signUp(cleanEmail, password, displayName.trim()), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
+      const result = mode === 'login' ? await withTimeout(signIn(cleanEmail, password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.') : await withTimeout(signUp(cleanEmail, password, displayName.trim()), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
       if (result.error) throw result.error;
       if (mode === 'signup') {
         window.localStorage.setItem(USERNAME_ONBOARDING_KEY, JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() }));
-        if (!result.data?.session) { setMessage('Account created. Check your email to confirm your account, then sign in.'); setMode('login'); setPassword(''); }
-        else setMessage('Account created successfully. Let’s choose your @.');
+        if (!result.data?.session) { setMessage('Account created. Check your email to confirm your account, then sign in.'); setMode('login'); setPassword(''); } else setMessage('Account created successfully. Let’s choose your @.');
       } else setMessage('Signed in successfully.');
     } catch (err) { setError(err.message || 'Authentication failed.'); }
     finally { setBusy(false); }
