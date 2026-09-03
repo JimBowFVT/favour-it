@@ -26,6 +26,7 @@ export default function AppShell() {
       }
 
       setLoading(true);
+      setRewardMessage('');
       try {
         await getCurrentProfile();
         const currentWallet = await getMyWallet();
@@ -42,7 +43,11 @@ export default function AppShell() {
             setWallet(await getMyWallet());
           }
         } catch (rewardError) {
-          if (mounted) setRewardMessage(rewardError.message || 'Daily reward unavailable.');
+          // A second app load on the same day is expected to receive this
+          // database response. It is not a user-facing error.
+          if (mounted && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) {
+            setRewardMessage('Daily reward is unavailable right now.');
+          }
         }
       } catch (error) {
         if (mounted) setRewardMessage(error.message || 'Could not load your account.');
