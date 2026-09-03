@@ -4,31 +4,25 @@
 // of FAV units distributed per day changes automatically while the intended
 // reward value stays stable.
 //
-// This is an internal reference model for the MVP, not a promise that FAV has
-// a fixed fiat market price. External trading/redemption remains disabled.
+// FAV is designed as a user-to-user marketplace currency at launch. Favourit
+// does NOT promise to buy FAV back from users. Users earn and spend FAV inside
+// the Favourit ecosystem; external trading/transfers are disabled for MVP.
 export const FAV_ECONOMY = {
   currency: 'FAV',
-
-  // Accounting precision. 1 FAV = 1,000,000 micro-FAV units.
-  // This lets FAV become very valuable without making small marketplace prices
-  // impossible to represent.
   unitsPerFAV: 1_000_000,
-
-  // Internal reference only. It can be changed by the economy controller after
-  // observing real marketplace purchasing power and demand.
   referenceUsdPerFAV: 100,
-
-  // Rewards are specified in USD-equivalent purchasing value, then converted
-  // into FAV using the current reference value.
   standardDailyRewardUsd: 1,
   premiumDailyRewardUsd: 2,
   onboardingRewardDays: 3,
   onboardingDailyRewardUsd: 0,
-
   transactionFeePercent: 5,
   minimumDealPriceUsdEquivalent: 1,
   escrowEnabled: true,
+
+  // Favourit is not the buyer of last resort for FAV.
+  fiatPurchaseEnabled: false,
   fiatRedemptionEnabled: false,
+  userToUserTransfersEnabled: false,
   externalTransfersEnabled: false,
 };
 
