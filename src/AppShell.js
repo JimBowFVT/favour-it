@@ -52,5 +52,5 @@ export default function AppShell() {
   if (!session) return <AuthGate />;
   if (adminPath) return <AdminPanel />;
   if (!usernameStatus?.username_chosen) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profile => { localStorage.setItem('favourit_username', profile.username); setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true }); }} />;
-  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem('favourit_username', status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} /><ActivityCenter /></>;
+  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem('favourit_username', status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} /><ActivityCenter /></>;
 }
