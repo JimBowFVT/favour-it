@@ -28,11 +28,10 @@ export async function claimDailyReward() {
   const { data, error } = await supabase.rpc('claim_daily_reward');
   if (error) throw error;
 
-  const result = Array.isArray(data) ? data[0] : data;
-  const amount = Number(result?.reward_micro_fav || result?.amount_fav || 0);
+  const amount = Number(Array.isArray(data) ? data[0] : data || 0);
   return {
-    ...result,
     reward_micro_fav: amount,
     reward_fav: microFavToFav(amount),
+    claimed: true,
   };
 }
