@@ -17,7 +17,7 @@ export default function UsernameManager({ status, onChanged }) {
 
   useEffect(() => {
     const onProfileOpen = event => {
-      if (event.target?.closest?.('.profile-button')) {
+      if (event.target?.closest?.('.profile-button, .profile-handle')) {
         setUsername(status?.username || '');
         setError('');
         setOpen(true);
