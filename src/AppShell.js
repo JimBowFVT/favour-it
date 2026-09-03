@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import App from './App';
+import AuthGate from './components/AuthGate';
 import { supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
 import { claimDailyReward, getMyWallet } from './lib/wallet';
@@ -18,11 +19,13 @@ export default function AppShell() {
         if (mounted) {
           setSession(null);
           setWallet(null);
+          setRewardMessage('');
           setLoading(false);
         }
         return;
       }
 
+      setLoading(true);
       try {
         await getCurrentProfile();
         const currentWallet = await getMyWallet();
@@ -30,8 +33,6 @@ export default function AppShell() {
         setSession(nextSession);
         setWallet(currentWallet);
 
-        // The RPC is idempotent for the current day, so refreshing the app
-        // cannot mint a second reward. Errors are shown without blocking login.
         try {
           const reward = await claimDailyReward();
           if (mounted && reward?.claimed) {
@@ -51,9 +52,7 @@ export default function AppShell() {
     };
 
     supabase.auth.getSession().then(({ data }) => load(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      load(nextSession);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => load(nextSession));
 
     return () => {
       mounted = false;
@@ -65,7 +64,7 @@ export default function AppShell() {
     return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><p>Loading your Favourit account…</p></div></div>;
   }
 
-  if (!session) return <App />;
+  if (!session) return <AuthGate />;
 
   return <App initialWallet={wallet} session={session} rewardMessage={rewardMessage} />;
 }
