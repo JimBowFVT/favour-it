@@ -1,12 +1,4 @@
 // FAV launch economy — value-based rewards.
-// IMPORTANT: FAV rewards are defined by their intended purchasing value, not by
-// a fixed number of coins. If the reference value of 1 FAV changes, the number
-// of FAV units distributed per day changes automatically while the intended
-// reward value stays stable.
-//
-// FAV is designed as a user-to-user marketplace currency at launch. Favourit
-// does NOT promise to buy FAV back from users. Users earn and spend FAV inside
-// the Favourit ecosystem; external trading/transfers are disabled for MVP.
 export const FAV_ECONOMY = {
   currency: 'FAV',
   unitsPerFAV: 1_000_000,
@@ -18,8 +10,6 @@ export const FAV_ECONOMY = {
   transactionFeePercent: 5,
   minimumDealPriceUsdEquivalent: 1,
   escrowEnabled: true,
-
-  // Favourit is not the buyer of last resort for FAV.
   fiatPurchaseEnabled: false,
   fiatRedemptionEnabled: false,
   userToUserTransfersEnabled: false,
@@ -48,12 +38,10 @@ export function unitsToFAV(units) {
 }
 
 export function getDailyReward(accountAgeDays, isPremium = false, referenceUsdPerFAV = FAV_ECONOMY.referenceUsdPerFAV) {
-  if (Number(accountAgeDays) <= FAV_ECONOMY.onboardingRewardDays) {
+  if (Number(accountAgeDays) < FAV_ECONOMY.onboardingRewardDays) {
     return usdValueToFAV(FAV_ECONOMY.onboardingDailyRewardUsd, referenceUsdPerFAV);
   }
-  const usdReward = isPremium
-    ? FAV_ECONOMY.premiumDailyRewardUsd
-    : FAV_ECONOMY.standardDailyRewardUsd;
+  const usdReward = isPremium ? FAV_ECONOMY.premiumDailyRewardUsd : FAV_ECONOMY.standardDailyRewardUsd;
   return usdValueToFAV(usdReward, referenceUsdPerFAV);
 }
 
