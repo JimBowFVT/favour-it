@@ -5,7 +5,7 @@ export async function searchUsersByUsername(query) {
   if (!term) return [];
   const { data, error } = await supabase.rpc('search_users_by_username', { p_query: term });
   if (error) throw error;
-  return data || [];
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getOrCreateDirectConversation(username) {
@@ -15,10 +15,16 @@ export async function getOrCreateDirectConversation(username) {
   return data;
 }
 
+export async function getMyDirectConversations() {
+  const { data, error } = await supabase.rpc('get_my_direct_conversations');
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
 export async function getDirectMessages(conversationId) {
   const { data, error } = await supabase.from('messages').select('id, conversation_id, sender_id, body, created_at, updated_at').eq('conversation_id', conversationId).order('created_at', { ascending: true });
   if (error) throw error;
-  return data || [];
+  return Array.isArray(data) ? data : [];
 }
 
 export async function sendDirectMessage(conversationId, body) {
