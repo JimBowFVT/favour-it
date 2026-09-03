@@ -18,9 +18,10 @@ describe('FAV economy', () => {
     expect(getDailyReward(4, true, 100)).toBeCloseTo(0.02);
   });
 
-  test('onboarding days intentionally receive zero reward', () => {
-    expect(getDailyReward(1, false, 100)).toBe(0);
-    expect(getDailyReward(3, true, 100)).toBe(0);
+  test('three-day onboarding window receives zero reward', () => {
+    expect(getDailyReward(0, false, 100)).toBe(0);
+    expect(getDailyReward(2, true, 100)).toBe(0);
+    expect(getDailyReward(3, true, 100)).toBeCloseTo(0.02);
   });
 
   test('calculates platform fee and seller payout', () => {
