@@ -4,6 +4,9 @@ const normalizeOrder = (row) => {
   if (!row) return null;
   return {
     id: row.id,
+    buyerId: row.buyer_id || row.buyerId || null,
+    sellerId: row.seller_id || row.sellerId || null,
+    dealId: row.deal_id || row.dealId || null,
     title: row.title || 'Favourit order',
     seller: row.seller_name || row.seller || 'Favourit seller',
     category: row.category || 'Service',
