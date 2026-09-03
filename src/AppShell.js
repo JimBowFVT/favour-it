@@ -13,8 +13,10 @@ import { getMyUsernameStatus } from './lib/usernames';
 import { claimDailyReward, getMyWallet } from './lib/wallet';
 
 const BOOTSTRAP_TIMEOUT_MS = 12000;
+const USERNAME_STATUS_TIMEOUT_MS = 7000;
 function withTimeout(promise, ms, message = 'Request timed out. Please try again.') { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
 function isAdminPanelPath() { return window.location.pathname.replace(/\/+$/, '') === '/adminpanel'; }
+function usernameCacheKey(userId) { return userId ? `favourit_username:${userId}` : ''; }
 
 export default function AppShell() {
   const [session, setSession] = useState(null); const [wallet, setWallet] = useState(null); const [usernameStatus, setUsernameStatus] = useState(null); const [loading, setLoading] = useState(isSupabaseConfigured); const [rewardMessage, setRewardMessage] = useState('');
@@ -30,13 +32,14 @@ export default function AppShell() {
         if (!mounted || version !== loadVersion) return;
         setWallet(currentWallet || null);
         try {
-          const status = await withTimeout(getMyUsernameStatus(), 7000, 'Username setup is taking too long.');
+          const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
           if (mounted && version === loadVersion) {
-            setUsernameStatus(status || null);
-            if (status?.username_chosen && status?.username) localStorage.setItem('favourit_username', status.username);
+            const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null;
+            setUsernameStatus(normalizedStatus);
+            if (normalizedStatus?.username) localStorage.setItem(usernameCacheKey(nextSession.user.id), normalizedStatus.username);
           }
         } catch (_) {
-          const cached = localStorage.getItem('favourit_username');
+          const cached = localStorage.getItem(usernameCacheKey(nextSession.user.id));
           if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
         }
         if (!adminPath) { try { const reward = await withTimeout(claimDailyReward(), 8000, 'Daily reward timed out.'); if (mounted && version === loadVersion && reward?.claimed) { setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.'); try { setWallet(await withTimeout(getMyWallet(), 5000)); } catch (_) {} } } catch (rewardError) { if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) setRewardMessage('Daily reward is unavailable right now.'); } }
@@ -51,6 +54,9 @@ export default function AppShell() {
   if (loading) return <FavouritLoader title={session ? 'Loading your Favourit account' : 'Connecting to Favourit'} subtitle={session ? 'Preparing your secure workspace…' : 'Checking your secure session…'} />;
   if (!session) return <AuthGate />;
   if (adminPath) return <AdminPanel />;
-  if (!usernameStatus?.username_chosen) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profile => { localStorage.setItem('favourit_username', profile.username); setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true }); }} />;
-  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem('favourit_username', status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} /><ActivityCenter /></>;
+  // A handle is considered chosen as soon as a non-empty username exists. The
+  // boolean flag is retained for backward compatibility but is not allowed to
+  // lock existing users out of the app.
+  if (!usernameStatus?.username) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profile => { localStorage.setItem(usernameCacheKey(session.user.id), profile.username); setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true }); }} />;
+  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem(usernameCacheKey(session.user.id), status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} /><ActivityCenter /></>;
 }
