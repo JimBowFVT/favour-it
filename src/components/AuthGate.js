@@ -3,6 +3,7 @@ import { signIn, signUp } from '../lib/auth';
 import FavouritLoader from './FavouritLoader';
 
 const AUTH_TIMEOUT_MS = 15000;
+const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
 
 function Logo() {
   return <div className="logo"><span>Favour</span><i>it</i></div>;
@@ -43,9 +44,12 @@ export default function AuthGate() {
         setMessage('Account created. Check your email to confirm your account, then sign in.');
         setMode('login');
         setPassword('');
+      } else if (mode === 'signup') {
+        // The @ choice is onboarding, not a login screen. Remember that it was
+        // explicitly triggered by account creation so returning users never see it.
+        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, result.data.user?.id || 'pending');
+        setMessage('Account created successfully. Let’s choose your @.');
       } else {
-        // AppShell listens for the Supabase auth event and will move into the
-        // account bootstrap loader automatically. Do not fake a second login.
         setMessage('Signed in successfully.');
       }
     } catch (err) {
