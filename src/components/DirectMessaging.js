@@ -22,7 +22,7 @@ function playMessagePing() {
   } catch (_) {}
 }
 
-export default function DirectMessaging({ session }) {
+export default function DirectMessaging({ session, usernameStatus }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -34,7 +34,7 @@ export default function DirectMessaging({ session }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const endRef = useRef(null);
-  const previousMessageCount = useRef(0);
+  const ownUsername = usernameStatus?.username || session?.user?.user_metadata?.username || 'username';
 
   const refreshConversations = async () => {
     try { setConversations(await getMyDirectConversations()); } catch (e) { setError(e.message || 'Could not load conversations.'); }
@@ -117,10 +117,10 @@ export default function DirectMessaging({ session }) {
     {open && <div className="dm-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setOpen(false); }}>
       <section className="dm-panel">
         <header className="dm-header">
-          <div><div className="eyebrow">FAVOURIT MESSAGES</div><h2>{selected ? `@${selected.username}` : 'Messages'}</h2></div>
-          <button className="dm-close" onClick={() => setOpen(false)}>×</button>
+          <div className="dm-header-identity"><span className="dm-header-handle">@{ownUsername}</span><span className="dm-header-title">Messages</span></div>
+          <button className="dm-close" onClick={() => setOpen(false)} aria-label="Close messages">×</button>
         </header>
-        {error && <div className="dm-error">{error}<button onClick={() => setError('')}>×</button></div>}
+        {error && <div className="dm-error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
         {!selected ? <>
           <div className="dm-search"><span>@</span><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Message someone by @username…" /></div>
           {query.trim() && <div className="dm-results">{results.map(user => <button key={user.user_id} onClick={() => openConversation(user)} disabled={busy}><div className="dm-avatar">{(user.display_name || user.username || 'U').slice(0,1).toUpperCase()}</div><div><strong>{user.display_name || user.username}</strong><span>@{user.username}</span></div><b>→</b></button>)}{!results.length && <p className="dm-empty">No one found for @{query.replace(/^@/,'')}.</p>}</div>}
