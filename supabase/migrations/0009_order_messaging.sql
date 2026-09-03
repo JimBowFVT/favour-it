@@ -95,8 +95,6 @@ $$;
 
 grant execute on function public.get_or_create_order_conversation(uuid) to authenticated;
 
-authorization default privileges in schema public;
-
 create or replace function public.send_order_message(p_order_id uuid, p_body text)
 returns public.messages
 language plpgsql
