@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import App from './App';
 import AuthGate from './components/AuthGate';
-import { supabase } from './lib/supabase';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
 import { claimDailyReward, getMyWallet } from './lib/wallet';
 
 export default function AppShell() {
   const [session, setSession] = useState(null);
   const [wallet, setWallet] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
   const [rewardMessage, setRewardMessage] = useState('');
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return undefined;
     let mounted = true;
 
     const load = async (nextSession) => {
@@ -43,8 +44,6 @@ export default function AppShell() {
             setWallet(await getMyWallet());
           }
         } catch (rewardError) {
-          // A second app load on the same day is expected to receive this
-          // database response. It is not a user-facing error.
           if (mounted && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) {
             setRewardMessage('Daily reward is unavailable right now.');
           }
@@ -64,6 +63,10 @@ export default function AppShell() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  if (!isSupabaseConfigured) {
+    return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><h2>Connect your Favourit backend</h2><p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p></div></div>;
+  }
 
   if (loading) {
     return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><p>Loading your Favourit account…</p></div></div>;
