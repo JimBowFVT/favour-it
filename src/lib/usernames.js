@@ -12,7 +12,7 @@ export async function completeUsername(username) {
   return Array.isArray(data) ? data[0] || null : data;
 }
 
-export async function suggestUsernames({ displayName = '', email = '' } = {}) {
+export function suggestUsernames({ displayName = '', email = '' } = {}) {
   const clean = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const first = clean(displayName).slice(0, 12);
   const emailBase = clean(String(email).split('@')[0]).slice(0, 12);
