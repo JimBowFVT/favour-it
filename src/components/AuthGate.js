@@ -40,15 +40,18 @@ export default function AuthGate() {
         ? await withTimeout(signIn(email.trim(), password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.')
         : await withTimeout(signUp(email.trim(), password, displayName.trim()), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
       if (result.error) throw result.error;
-      if (mode === 'signup' && !result.data?.session) {
-        setMessage('Account created. Check your email to confirm your account, then sign in.');
-        setMode('login');
-        setPassword('');
-      } else if (mode === 'signup') {
-        // The @ choice is onboarding, not a login screen. Remember that it was
-        // explicitly triggered by account creation so returning users never see it.
-        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, result.data.user?.id || 'pending');
-        setMessage('Account created successfully. Let’s choose your @.');
+      if (mode === 'signup') {
+        // This flag belongs to this browser's newly-created account only. It is
+        // consumed after the @ has actually been chosen, so normal logins never
+        // open the username chooser.
+        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, result.data?.user?.id || 'pending');
+        if (!result.data?.session) {
+          setMessage('Account created. Check your email to confirm your account, then sign in.');
+          setMode('login');
+          setPassword('');
+        } else {
+          setMessage('Account created successfully. Let’s choose your @.');
+        }
       } else {
         setMessage('Signed in successfully.');
       }
