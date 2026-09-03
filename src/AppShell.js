@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import App from './App';
 import AuthGate from './components/AuthGate';
 import ActivityCenter from './components/ActivityCenter';
@@ -18,56 +18,75 @@ const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
 function withTimeout(promise, ms, message = 'Request timed out. Please try again.') { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
 function isAdminPanelPath() { return window.location.pathname.replace(/\/+$/, '') === '/adminpanel'; }
 function usernameCacheKey(userId) { return userId ? `favourit_username:${userId}` : ''; }
+function getPendingOnboarding() { try { return JSON.parse(localStorage.getItem(USERNAME_ONBOARDING_KEY) || 'null'); } catch (_) { return null; } }
 
 export default function AppShell() {
   const [session, setSession] = useState(null); const [wallet, setWallet] = useState(null); const [usernameStatus, setUsernameStatus] = useState(null); const [loading, setLoading] = useState(isSupabaseConfigured); const [rewardMessage, setRewardMessage] = useState('');
+  const initializedRef = useRef(false);
   const adminPath = isAdminPanelPath();
+
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return undefined; let mounted = true; let loadVersion = 0;
-    const load = async nextSession => { const version = ++loadVersion;
+    if (!isSupabaseConfigured || !supabase) return undefined;
+    let mounted = true; let loadVersion = 0;
+    const hydrate = async (nextSession, showLoader = false) => {
+      const version = ++loadVersion;
       if (!nextSession) { if (mounted && version === loadVersion) { setSession(null); setWallet(null); setUsernameStatus(null); setRewardMessage(''); setLoading(false); } return; }
-      if (mounted && version === loadVersion) { setSession(nextSession); setLoading(true); }
-      let statusLoaded = false;
+      if (mounted && version === loadVersion) { setSession(nextSession); if (showLoader) setLoading(true); else setLoading(false); }
       try {
         const profileResult = await withTimeout(getCurrentProfile(), BOOTSTRAP_TIMEOUT_MS, 'Account setup is taking too long.');
         const currentWallet = profileResult?.wallet || await withTimeout(getMyWallet(), BOOTSTRAP_TIMEOUT_MS, 'Wallet loading timed out.');
         if (!mounted || version !== loadVersion) return;
         setWallet(currentWallet || null);
-        try {
-          const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
-          if (mounted && version === loadVersion) {
-            statusLoaded = true;
-            const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null;
-            setUsernameStatus(normalizedStatus);
-            if (normalizedStatus?.username) localStorage.setItem(usernameCacheKey(nextSession.user.id), normalizedStatus.username);
-          }
-        } catch (_) {
-          const cached = localStorage.getItem(usernameCacheKey(nextSession.user.id));
-          if (cached && mounted && version === loadVersion) { statusLoaded = true; setUsernameStatus({ username: cached, username_chosen: true }); }
-        }
-        if (!adminPath) { try { const reward = await withTimeout(claimDailyReward(), 8000, 'Daily reward timed out.'); if (mounted && version === loadVersion && reward?.claimed) { setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.'); try { setWallet(await withTimeout(getMyWallet(), 5000)); } catch (_) {} } } catch (rewardError) { if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) setRewardMessage('Daily reward is unavailable right now.'); } }
       } catch (error) { if (mounted && version === loadVersion) setRewardMessage(error.message || 'Some account data could not be loaded yet.'); }
-      finally {
-        if (mounted && version === loadVersion) {
-          // Never show the first-login @ chooser just because a returning user's
-          // username RPC was slow. It is opened only by account creation.
-          if (!statusLoaded) {
-            const cached = localStorage.getItem(usernameCacheKey(nextSession.user.id));
-            if (cached) setUsernameStatus({ username: cached, username_chosen: true });
+
+      try {
+        const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
+        if (!mounted || version !== loadVersion) return;
+        const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null;
+        setUsernameStatus(normalizedStatus);
+        if (normalizedStatus?.username) localStorage.setItem(usernameCacheKey(nextSession.user.id), normalizedStatus.username);
+        const pending = getPendingOnboarding();
+        if (pending && ((pending.userId && pending.userId === nextSession.user.id) || pending.email === nextSession.user.email?.toLowerCase())) {
+          if (normalizedStatus?.username) localStorage.removeItem(USERNAME_ONBOARDING_KEY);
+        }
+      } catch (_) {
+        const cached = localStorage.getItem(usernameCacheKey(nextSession.user.id));
+        if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
+      }
+
+      if (!adminPath) {
+        try {
+          const reward = await withTimeout(claimDailyReward(), 8000, 'Daily reward timed out.');
+          if (mounted && version === loadVersion && reward?.claimed) {
+            setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.');
+            try { setWallet(await withTimeout(getMyWallet(), 5000)); } catch (_) {}
           }
-          setLoading(false);
+        } catch (rewardError) {
+          if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) setRewardMessage('Daily reward is unavailable right now.');
         }
       }
+      if (mounted && version === loadVersion) setLoading(false);
     };
-    supabase.auth.getSession().then(({ data }) => load(data.session)).catch(() => { if (mounted) setLoading(false); });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => { window.setTimeout(() => load(nextSession), 0); });
+
+    supabase.auth.getSession().then(({ data }) => { if (!mounted) return; initializedRef.current = true; hydrate(data.session, true); }).catch(() => { if (mounted) { initializedRef.current = true; setLoading(false); } });
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      window.setTimeout(() => {
+        if (!mounted) return;
+        if (event === 'SIGNED_OUT') { hydrate(null, false); return; }
+        // Auth changes after the initial session (sign-in, token refresh, tab focus)
+        // update state in place. They must never flash the full-page loader.
+        hydrate(nextSession, false);
+      }, 0);
+    });
     return () => { mounted = false; loadVersion += 1; listener.subscription.unsubscribe(); };
   }, [adminPath]);
+
   if (!isSupabaseConfigured) return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><h2>Connect your Favourit backend</h2><p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p></div></div>;
   if (loading) return <FavouritLoader title={session ? 'Loading your Favourit account' : 'Connecting to Favourit'} subtitle={session ? 'Preparing your secure workspace…' : 'Checking your secure session…'} />;
   if (!session) return <AuthGate />;
   if (adminPath) return <AdminPanel />;
-  const onboardingPending = localStorage.getItem(USERNAME_ONBOARDING_KEY) === session.user.id;
+  const pending = getPendingOnboarding();
+  const onboardingPending = Boolean(pending && ((pending.userId && pending.userId === session.user.id) || pending.email === session.user.email?.toLowerCase()));
   if (onboardingPending && !usernameStatus?.username) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profile => { localStorage.removeItem(USERNAME_ONBOARDING_KEY); localStorage.setItem(usernameCacheKey(session.user.id), profile.username); setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true }); }} />;
   return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem(usernameCacheKey(session.user.id), status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} usernameStatus={usernameStatus} /><ActivityCenter /></>;
 }
