@@ -48,28 +48,20 @@ export async function createDeal({ title, description, category, price, delivery
   const numericPrice = Number(price);
   const deliveryDays = Number.parseInt(String(delivery).match(/\d+/)?.[0] || '', 10);
   if (!Number.isFinite(numericPrice) || numericPrice <= 0) throw new Error('Enter a valid FAV price.');
-  if (!Number.isInteger(deliveryDays) || deliveryDays < 1 || deliveryDays > 30) throw new Error('Choose a delivery time between 1 and 30 days.');
+  if (!Number.isInteger(deliveryDays) || deliveryDays < 1 || deliveryDays > 30) {
+    throw new Error('Choose a delivery time between 1 and 30 days.');
+  }
 
-  const { data, error } = await supabase
-    .from('deals')
-    .insert({
-      seller_id: userData.user.id,
-      title: title.trim(),
-      description: description.trim(),
-      category,
-      price_fav: Math.round(numericPrice * MICRO_FAV),
-      delivery_days: deliveryDays,
-      status: 'published',
-    })
-    .select('id, seller_id, title, description, category, price_fav, delivery_days, status, created_at')
-    .single();
+  const { data, error } = await supabase.rpc('create_deal', {
+    p_title: title.trim(),
+    p_description: description.trim(),
+    p_category: category.trim(),
+    p_price_fav: Math.round(numericPrice * MICRO_FAV),
+    p_delivery_days: deliveryDays,
+  });
   if (error) throw error;
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('id', userData.user.id)
-    .maybeSingle();
-
-  return normalizeDeal(data, profile?.display_name);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Deal was not created.');
+  return normalizeDeal(row, userData.user.user_metadata?.display_name);
 }
