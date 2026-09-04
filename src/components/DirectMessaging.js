@@ -56,43 +56,64 @@ export default function DirectMessaging({ session, usernameStatus }) {
 
   const endRef = useRef(null);
   const audioRef = useRef(null);
-  const typingTimerRef = useRef(null);
   const typingChannelsRef = useRef(new Map());
-  const typingStateRef = useRef({});
+  const typingExpiryTimersRef = useRef(new Map());
+  const typingHeartbeatRef = useRef(null);
+  const conversationIdRef = useRef(null);
   const bodyRef = useRef('');
   const ownUsername = usernameStatus?.username || session?.user?.user_metadata?.username || 'username';
 
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
   const setConversationTyping = (id, isTyping, timestamp = Date.now()) => {
     if (!id) return;
-    typingStateRef.current[id] = isTyping ? timestamp : 0;
+    const previousTimer = typingExpiryTimersRef.current.get(id);
+    if (previousTimer) window.clearTimeout(previousTimer);
+
     setTypingByConversation(current => {
       const next = { ...current };
       if (isTyping) next[id] = timestamp;
       else delete next[id];
       return next;
     });
+
+    if (isTyping) {
+      const timer = window.setTimeout(() => {
+        setTypingByConversation(current => {
+          if (!current[id]) return current;
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+        typingExpiryTimersRef.current.delete(id);
+      }, 4000);
+      typingExpiryTimersRef.current.set(id, timer);
+    } else {
+      typingExpiryTimersRef.current.delete(id);
+    }
   };
 
   const readTypingState = channel => {
-    const state = channel.presenceState();
-    const now = Date.now();
-    const others = Object.values(state)
-      .flat()
-      .filter(item => item.user_id !== session.user.id);
-    const typingEntry = others
-      .filter(item => item.typing && now - Number(item.typing_at || 0) < 6000)
-      .sort((a, b) => Number(b.typing_at || 0) - Number(a.typing_at || 0))[0];
-    setConversationTyping(
-      channel.__favouritConversationId,
-      Boolean(typingEntry),
-      Number(typingEntry?.typing_at || now),
-    );
+    try {
+      const state = channel.presenceState();
+      const now = Date.now();
+      const others = Object.values(state).flat().filter(item => item.user_id !== session.user.id);
+      const typingEntry = others
+        .filter(item => item.typing && now - Number(item.typing_at || 0) < 4000)
+        .sort((a, b) => Number(b.typing_at || 0) - Number(a.typing_at || 0))[0];
+      setConversationTyping(channel.__favouritConversationId, Boolean(typingEntry), Number(typingEntry?.typing_at || now));
+    } catch (_) {}
   };
 
   const ensureTypingChannel = async id => {
     if (!id || !supabase || !session?.user?.id) return null;
     const existing = typingChannelsRef.current.get(id);
-    if (existing) return existing;
+    if (existing) {
+      await existing.ready;
+      return existing.channel;
+    }
 
     const channel = supabase.channel(`direct-typing-${id}`, {
       config: {
@@ -101,6 +122,11 @@ export default function DirectMessaging({ session, usernameStatus }) {
       },
     });
     channel.__favouritConversationId = id;
+
+    let resolveReady;
+    const ready = new Promise(resolve => { resolveReady = resolve; });
+    typingChannelsRef.current.set(id, { channel, ready });
+
     channel
       .on('broadcast', { event: 'typing' }, payload => {
         if (payload.payload?.user_id === session.user.id) return;
@@ -112,23 +138,19 @@ export default function DirectMessaging({ session, usernameStatus }) {
       .on('presence', { event: 'join' }, () => readTypingState(channel))
       .on('presence', { event: 'leave' }, () => readTypingState(channel));
 
-    typingChannelsRef.current.set(id, channel);
-    await new Promise(resolve => {
-      channel.subscribe(async status => {
-        if (status === 'SUBSCRIBED') {
-          const ownTyping = Boolean(bodyRef.current.trim()) && id === conversationId;
-          await channel.track({
-            user_id: session.user.id,
-            typing: ownTyping,
-            typing_at: ownTyping ? Date.now() : 0,
-          });
-          readTypingState(channel);
-          resolve();
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          resolve();
-        }
-      });
+    channel.subscribe(async status => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({ user_id: session.user.id, typing: false, typing_at: 0 });
+        } catch (_) {}
+        readTypingState(channel);
+        resolveReady();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        resolveReady();
+      }
     });
+
+    await ready;
     return channel;
   };
 
@@ -154,9 +176,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
 
   const markCurrentConversationRead = async id => {
     if (!id || !supabase) return;
-    try {
-      await supabase.rpc('mark_conversation_read', { p_conversation_id: id });
-    } catch (_) {}
+    try { await supabase.rpc('mark_conversation_read', { p_conversation_id: id }); } catch (_) {}
   };
 
   const refreshMessages = async id => {
@@ -191,19 +211,19 @@ export default function DirectMessaging({ session, usernameStatus }) {
     return () => window.clearTimeout(timer);
   }, [open, query]);
 
-  // Keep a lightweight realtime typing channel for every conversation visible in the inbox.
-  // This is deliberately separate from the message thread channel so the preview keeps
-  // receiving typing state even when the actual conversation is closed.
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     const ids = new Set(conversations.map(c => c.conversation_id).filter(Boolean));
     if (conversationId) ids.add(conversationId);
     ids.forEach(id => { ensureTypingChannel(id).catch(() => {}); });
 
-    typingChannelsRef.current.forEach((channel, id) => {
+    typingChannelsRef.current.forEach((entry, id) => {
       if (!ids.has(id)) {
-        try { channel.untrack(); } catch (_) {}
-        try { supabase.removeChannel(channel); } catch (_) {}
+        try { entry.channel.untrack(); } catch (_) {}
+        try { supabase.removeChannel(entry.channel); } catch (_) {}
+        const expiry = typingExpiryTimersRef.current.get(id);
+        if (expiry) window.clearTimeout(expiry);
+        typingExpiryTimersRef.current.delete(id);
         typingChannelsRef.current.delete(id);
         setConversationTyping(id, false);
       }
@@ -213,19 +233,23 @@ export default function DirectMessaging({ session, usernameStatus }) {
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     return () => {
-      typingChannelsRef.current.forEach(channel => {
-        try { channel.untrack(); } catch (_) {}
-        try { supabase.removeChannel(channel); } catch (_) {}
+      if (typingHeartbeatRef.current) {
+        window.clearInterval(typingHeartbeatRef.current);
+        typingHeartbeatRef.current = null;
+      }
+      typingExpiryTimersRef.current.forEach(timer => window.clearTimeout(timer));
+      typingExpiryTimersRef.current.clear();
+      typingChannelsRef.current.forEach(entry => {
+        try { entry.channel.untrack(); } catch (_) {}
+        try { supabase.removeChannel(entry.channel); } catch (_) {}
       });
       typingChannelsRef.current.clear();
-      typingStateRef.current = {};
     };
   }, [session?.user?.id]);
 
   useEffect(() => {
     if (!conversationId || !supabase) return undefined;
     let active = true;
-
     const load = async () => {
       try {
         const data = await getDirectMessages(conversationId);
@@ -239,7 +263,6 @@ export default function DirectMessaging({ session, usernameStatus }) {
         if (active) setError(e.message || 'Could not load messages.');
       }
     };
-
     load();
     const channel = supabase
       .channel(`direct-chat-${conversationId}`, { config: { broadcast: { self: false }, presence: { key: session.user.id } } })
@@ -259,11 +282,10 @@ export default function DirectMessaging({ session, usernameStatus }) {
     const pollTimer = window.setInterval(() => {
       refreshMessages(conversationId);
       refreshReadState(conversationId);
-      const typingChannel = typingChannelsRef.current.get(conversationId);
-      if (typingChannel) readTypingState(typingChannel);
+      const entry = typingChannelsRef.current.get(conversationId);
+      if (entry) readTypingState(entry.channel);
     }, 1000);
     const readHeartbeat = window.setInterval(() => markCurrentConversationRead(conversationId), 1500);
-
     return () => {
       active = false;
       window.clearInterval(pollTimer);
@@ -292,21 +314,60 @@ export default function DirectMessaging({ session, usernameStatus }) {
   }, [session?.user?.id, conversationId]);
 
   useEffect(() => () => {
-    window.clearTimeout(typingTimerRef.current);
+    if (typingHeartbeatRef.current) window.clearInterval(typingHeartbeatRef.current);
     try { audioRef.current?.close(); } catch (_) {}
   }, []);
 
-  useEffect(() => {
-    bodyRef.current = body;
-  }, [body]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typingByConversation]);
+  useEffect(() => { bodyRef.current = body; }, [body]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, typingByConversation]);
 
   const unreadCount = conversations.reduce((sum, c) => (
     sum + (c.conversation_id === conversationId && open ? 0 : Number(c.unread_count || 0))
   ), 0);
+
+  const updateTyping = async (value, id = conversationIdRef.current) => {
+    if (!id || !supabase || !session?.user?.id) return;
+    try {
+      const channel = await ensureTypingChannel(id);
+      if (!channel) return;
+      const payload = { user_id: session.user.id, typing: Boolean(value), typing_at: value ? Date.now() : 0 };
+      await channel.track(payload);
+      await channel.send({ type: 'broadcast', event: 'typing', payload });
+    } catch (_) {}
+  };
+
+  const stopTypingHeartbeat = async id => {
+    if (typingHeartbeatRef.current) {
+      window.clearInterval(typingHeartbeatRef.current);
+      typingHeartbeatRef.current = null;
+    }
+    if (id) await updateTyping(false, id);
+  };
+
+  const startTypingHeartbeat = id => {
+    if (!id) return;
+    if (typingHeartbeatRef.current) window.clearInterval(typingHeartbeatRef.current);
+    typingHeartbeatRef.current = window.setInterval(() => {
+      if (conversationIdRef.current !== id || !bodyRef.current.trim()) {
+        stopTypingHeartbeat(id);
+        return;
+      }
+      updateTyping(true, id);
+    }, 1500);
+  };
+
+  const handleBodyChange = e => {
+    const value = e.target.value;
+    setBody(value);
+    bodyRef.current = value;
+    const id = conversationIdRef.current;
+    if (!value.trim()) {
+      stopTypingHeartbeat(id);
+      return;
+    }
+    updateTyping(true, id);
+    startTypingHeartbeat(id);
+  };
 
   const openConversation = async (user, existingId = null) => {
     setBusy(true);
@@ -316,6 +377,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
       await ensureTypingChannel(id);
       setSelected(user);
       setConversationId(id);
+      conversationIdRef.current = id;
       setQuery('');
       setResults([]);
       setOpen(true);
@@ -336,53 +398,26 @@ export default function DirectMessaging({ session, usernameStatus }) {
   };
 
   const leaveConversation = async () => {
-    const id = conversationId;
+    const id = conversationIdRef.current;
+    await stopTypingHeartbeat(id);
     await markCurrentConversationRead(id);
     if (id) setConversations(current => current.map(c => c.conversation_id === id ? { ...c, unread_count: 0 } : c));
     setSelected(null);
     setConversationId(null);
+    conversationIdRef.current = null;
     setMessages([]);
     setBody('');
-    await updateTyping(false, id);
+    bodyRef.current = '';
     setOtherReadAt(null);
     refreshConversations();
   };
 
   const closeMessenger = async () => {
-    const id = conversationId;
+    const id = conversationIdRef.current;
+    await stopTypingHeartbeat(id);
     await markCurrentConversationRead(id);
     if (id) setConversations(current => current.map(c => c.conversation_id === id ? { ...c, unread_count: 0 } : c));
-    await updateTyping(false, id);
     setOpen(false);
-  };
-
-  const updateTyping = async (value, id = conversationId) => {
-    if (!id || !supabase || !session?.user?.id) return;
-    let channel = typingChannelsRef.current.get(id);
-    if (!channel) {
-      channel = await ensureTypingChannel(id);
-    }
-    if (!channel) return;
-    const payload = {
-      user_id: session.user.id,
-      typing: Boolean(value),
-      typing_at: value ? Date.now() : 0,
-    };
-    try {
-      await channel.track(payload);
-      await channel.send({ type: 'broadcast', event: 'typing', payload });
-    } catch (_) {}
-  };
-
-  const handleBodyChange = e => {
-    const value = e.target.value;
-    setBody(value);
-    bodyRef.current = value;
-    updateTyping(Boolean(value.trim()));
-    window.clearTimeout(typingTimerRef.current);
-    if (value.trim()) {
-      typingTimerRef.current = window.setTimeout(() => updateTyping(false), 5000);
-    }
   };
 
   const send = async e => {
@@ -395,8 +430,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
       setMessages(v => v.some(m => m.id === msg.id) ? v : [...v, msg]);
       setBody('');
       bodyRef.current = '';
-      window.clearTimeout(typingTimerRef.current);
-      await updateTyping(false);
+      await stopTypingHeartbeat(conversationId);
       playMessagePing(audioRef, false);
       refreshConversations();
     } catch (e) {
@@ -410,11 +444,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
 
   const currentTyping = Boolean(conversationId && typingByConversation[conversationId]);
   const lastMine = [...messages].reverse().find(m => m.sender_id === session.user.id);
-  const isLastMineRead = Boolean(
-    lastMine?.created_at &&
-    otherReadAt &&
-    new Date(otherReadAt).getTime() >= new Date(lastMine.created_at).getTime(),
-  );
+  const isLastMineRead = Boolean(lastMine?.created_at && otherReadAt && new Date(otherReadAt).getTime() >= new Date(lastMine.created_at).getTime());
   const conversationStatus = currentTyping ? 'typing…' : isLastMineRead ? 'Read' : lastMine ? 'Sent' : 'Online chat';
 
   return <>
@@ -488,7 +518,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
           </div>
           {currentTyping && <div className="dm-typing" role="status" aria-live="polite"><i></i><i></i><i></i><span>{selected.display_name || `@${selected.username}`} is typing</span></div>}
           <form className="dm-compose" onSubmit={send}>
-            <input value={body} onChange={handleBodyChange} onBlur={() => updateTyping(false)} maxLength={5000} placeholder={`Message @${selected.username}…`} autoFocus />
+            <input value={body} onChange={handleBodyChange} onBlur={() => stopTypingHeartbeat(conversationIdRef.current)} maxLength={5000} placeholder={`Message @${selected.username}…`} autoFocus />
             <button className="primary" disabled={busy || !body.trim()}>{busy ? '…' : 'Send'}</button>
           </form>
           <button className="dm-new" onClick={leaveConversation}>← All conversations</button>
