@@ -40,11 +40,11 @@ function playMessagePing(audioRef, incoming = true) {
   } catch (_) {}
 }
 
-// Typing is intentionally client-presence state, not message state.
-// Every real input refreshes the timestamp. A receiver keeps the indicator
-// visible for exactly five seconds after the last typing signal it received.
+// Typing is intentionally independent from messages/read receipts.
+// A signal is emitted from each real input event. The receiver owns a strict
+// five-second TTL from the newest input timestamp. No heartbeat is allowed to
+// extend the indicator after the typer actually stops entering characters.
 const TYPING_TTL_MS = 5000;
-const TYPING_HEARTBEAT_MS = 2000;
 
 export default function DirectMessaging({ session, usernameStatus }) {
   const [open, setOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
   const typingChannelsRef = useRef(new Map());
   const typingLastSeenRef = useRef(new Map());
   const typingLastEventRef = useRef(new Map());
-  const localTypingRef = useRef(new Map());
+  const ownTypingAtRef = useRef(new Map());
   const ownUsername = usernameStatus?.username || session?.user?.user_metadata?.username || 'username';
 
   useEffect(() => {
@@ -80,7 +80,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
     const previousTimestamp = typingLastEventRef.current.get(id) || 0;
 
     if (isTyping) {
-      // Never let an older/replayed realtime packet resurrect a newer state.
+      // Realtime delivery can be duplicated/out of order. Never allow an old
+      // packet to resurrect typing after a newer packet has already expired.
       if (incomingTimestamp < previousTimestamp) return;
       typingLastEventRef.current.set(id, incomingTimestamp);
       typingLastSeenRef.current.set(id, incomingTimestamp);
@@ -100,22 +101,20 @@ export default function DirectMessaging({ session, usernameStatus }) {
   };
 
   const expireTyping = id => {
-    if (!id) return;
     const lastSeen = typingLastSeenRef.current.get(id);
     if (!lastSeen) return;
-    if (Date.now() - lastSeen >= TYPING_TTL_MS) {
-      typingLastSeenRef.current.delete(id);
-      setTypingByConversation(current => {
-        if (!current[id]) return current;
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-    }
+    if (Date.now() - lastSeen < TYPING_TTL_MS) return;
+    typingLastSeenRef.current.delete(id);
+    setTypingByConversation(current => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   };
 
   const ensureTypingChannel = id => {
-    if (!id || !supabase || !session?.user?.id) return null;
+    if (!id || !supabase || !session?.user?.id) return Promise.resolve(null);
     const existing = typingChannelsRef.current.get(id);
     if (existing) return existing.readyPromise;
 
@@ -125,38 +124,34 @@ export default function DirectMessaging({ session, usernameStatus }) {
       },
     });
 
-    const entry = {
-      channel,
-      subscribed: false,
-      readyPromise: null,
-    };
-
-    entry.readyPromise = new Promise(resolve => {
-      channel
-        .on('broadcast', { event: 'typing' }, payload => {
-          const data = payload?.payload || {};
-          if (data.user_id === session.user.id) return;
-          if (data.conversation_id !== id) return;
-          setRemoteTyping(id, true, Number(data.typing_at || Date.now()));
-        })
-        .subscribe(status => {
-          const current = typingChannelsRef.current.get(id);
-          if (!current || current.channel !== channel) return;
-          if (status === 'SUBSCRIBED') {
-            current.subscribed = true;
-            resolve(channel);
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            current.subscribed = false;
-            resolve(null);
-          }
-        });
-    });
-
+    let resolveReady;
+    const readyPromise = new Promise(resolve => { resolveReady = resolve; });
+    const entry = { channel, subscribed: false, readyPromise };
     typingChannelsRef.current.set(id, entry);
-    return entry.readyPromise;
+
+    channel
+      .on('broadcast', { event: 'typing' }, payload => {
+        const data = payload?.payload || {};
+        if (data.user_id === session.user.id) return;
+        if (data.conversation_id !== id) return;
+        setRemoteTyping(id, true, Number(data.typing_at || Date.now()));
+      })
+      .subscribe(status => {
+        const current = typingChannelsRef.current.get(id);
+        if (!current || current.channel !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          current.subscribed = true;
+          resolveReady(channel);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          current.subscribed = false;
+          resolveReady(null);
+        }
+      });
+
+    return readyPromise;
   };
 
-  const sendTypingSignal = async (id) => {
+  const sendTypingSignal = async id => {
     const entry = typingChannelsRef.current.get(id);
     if (!entry?.channel || !entry.subscribed || !session?.user?.id) return false;
     const timestamp = Date.now();
@@ -175,27 +170,23 @@ export default function DirectMessaging({ session, usernameStatus }) {
 
   const announceTyping = id => {
     if (!id || !bodyRef.current.trim()) return;
-    const now = Date.now();
-    localTypingRef.current.set(id, now);
+    const timestamp = Date.now();
+    ownTypingAtRef.current.set(id, timestamp);
 
-    // The channel may still be handshaking. Queue this signal behind the
-    // subscription instead of silently dropping the first keystroke.
-    const readyPromise = ensureTypingChannel(id);
-    if (readyPromise) {
-      readyPromise.then(channel => {
-        if (!channel) return;
-        const lastInput = localTypingRef.current.get(id);
-        if (!lastInput) return;
-        sendTypingSignal(id);
-      }).catch(() => {});
-    }
+    // Queue behind channel subscription so the first character is not lost.
+    ensureTypingChannel(id).then(channel => {
+      if (!channel) return;
+      const latestLocalInput = ownTypingAtRef.current.get(id);
+      if (!latestLocalInput) return;
+      sendTypingSignal(id);
+    }).catch(() => {});
   };
 
   const stopLocalTyping = id => {
     if (!id) return;
-    localTypingRef.current.delete(id);
-    // Deliberately do not broadcast a false event. The receiver owns the
-    // five-second expiry, so navigation/send/blur cannot prematurely erase it.
+    ownTypingAtRef.current.delete(id);
+    // Never send typing=false on blur, send, navigation, or chat switching.
+    // The receiver must keep the last real typing signal for five seconds.
   };
 
   const refreshConversations = async () => {
@@ -253,9 +244,9 @@ export default function DirectMessaging({ session, usernameStatus }) {
     return () => window.clearTimeout(timer);
   }, [open, query]);
 
-  // Keep one typing subscription for every visible conversation. Because the
-  // same channel is reused on the list and inside the chat, the indicator does
-  // not reset when the user opens a conversation.
+  // The same conversation channel is kept alive while the inbox is open and
+  // reused by the thread. That makes the list indicator and in-chat indicator
+  // one continuous state instead of two competing implementations.
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     const ids = new Set(conversations.map(c => c.conversation_id).filter(Boolean));
@@ -268,45 +259,20 @@ export default function DirectMessaging({ session, usernameStatus }) {
         typingChannelsRef.current.delete(id);
         typingLastSeenRef.current.delete(id);
         typingLastEventRef.current.delete(id);
-        localTypingRef.current.delete(id);
+        ownTypingAtRef.current.delete(id);
         setRemoteTyping(id, false, Date.now());
       }
     });
   }, [conversations, conversationId, session?.user?.id]);
 
-  // Receiver-side expiry is independent from message polling and realtime.
-  // This is what guarantees the exact five-second visual lifetime.
+  // Receiver expiry is deliberately independent of message polling. A person
+  // can keep typing state visible through several messages and while switching
+  // between inbox and thread; only five seconds of silence removes it.
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     const timer = window.setInterval(() => {
-      const now = Date.now();
-      typingLastSeenRef.current.forEach((lastSeen, id) => {
-        if (now - lastSeen >= TYPING_TTL_MS) expireTyping(id);
-      });
+      typingLastSeenRef.current.forEach((_, id) => expireTyping(id));
     }, 250);
-
-    return () => window.clearInterval(timer);
-  }, [session?.user?.id]);
-
-  // Local typing heartbeat only exists while there has been recent real input.
-  // It stops after five seconds of silence, so merely leaving text in the
-  // input cannot keep the other person's indicator alive forever.
-  useEffect(() => {
-    if (!session?.user?.id || !supabase) return undefined;
-    const timer = window.setInterval(() => {
-      const now = Date.now();
-      localTypingRef.current.forEach((lastInput, id) => {
-        if (now - lastInput >= TYPING_TTL_MS) {
-          stopLocalTyping(id);
-          return;
-        }
-        // Refresh at most every two seconds while the user is actively typing.
-        const entry = typingChannelsRef.current.get(id);
-        if (entry?.subscribed && now - lastInput < TYPING_TTL_MS && now - lastInput >= TYPING_HEARTBEAT_MS) {
-          sendTypingSignal(id);
-        }
-      });
-    }, 500);
     return () => window.clearInterval(timer);
   }, [session?.user?.id]);
 
@@ -452,8 +418,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
     try {
       const msg = await sendDirectMessage(conversationId, body);
       setMessages(current => current.some(m => m.id === msg.id) ? current : [...current, msg]);
-      // Do not send a typing=false packet here. The other side should keep the
-      // indicator for the required five seconds after the last typing signal.
+      // Keep the receiver's indicator alive until five seconds after the last
+      // actual input signal. Sending a message must not erase it immediately.
       stopLocalTyping(conversationId);
       setBody('');
       bodyRef.current = '';
