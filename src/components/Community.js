@@ -5,7 +5,6 @@ import {
   sendFriendRequest,
   respondFriendRequest,
   cancelFriendRequest,
-  removeFriend,
   blockUser,
   listCommunityGroups,
   joinCommunityGroup,
@@ -27,7 +26,7 @@ function Avatar({ person, large = false }) {
   return <div className={`community-avatar ${large ? 'large' : ''}`}>{initials(person?.display_name || person?.username)}</div>;
 }
 
-function PersonCard({ person, status, onConnect, onCancel, onBlock }) {
+function PersonCard({ person, status, onConnect, onCancel, onBlock, onMessage }) {
   return (
     <article className="community-person-card">
       <Avatar person={person} large />
@@ -37,7 +36,7 @@ function PersonCard({ person, status, onConnect, onCancel, onBlock }) {
         <p>{person.bio || 'Favourit member · Open to new collaborations.'}</p>
       </div>
       <div className="community-person-actions">
-        {status === 'friends' && <span className="community-status success">Friends ✓</span>}
+        {status === 'friends' && <><span className="community-status success">Friends ✓</span>{onMessage && <button className="secondary small" onClick={onMessage}>Message</button>}</>}
         {status === 'incoming' && <button className="primary small" onClick={() => onConnect('accept')}>Accept</button>}
         {status === 'incoming' && <button className="secondary small" onClick={() => onConnect('reject')}>Decline</button>}
         {status === 'outgoing' && <button className="secondary small" onClick={onCancel}>Pending</button>}
@@ -82,7 +81,6 @@ export default function Community({ onOpenMessages }) {
     const data = await getMySocialGraph();
     setGraph({ friends: data?.friends || [], incoming: data?.incoming || [], outgoing: data?.outgoing || [], blocked: data?.blocked || [] });
   };
-
   const refreshGroups = async () => {
     const data = await listCommunityGroups();
     setGroups(Array.isArray(data) ? data : []);
@@ -108,15 +106,10 @@ export default function Community({ onOpenMessages }) {
     if (graph.outgoing.some(person => person.user_id === id)) return 'outgoing';
     return '';
   };
-
-  const discoverPeople = useMemo(() => {
-    if (people.length) return people;
-    return graph.friends.slice(0, 5);
-  }, [people, graph.friends]);
-
-  const action = async (fn, successTab = null) => {
+  const discoverPeople = useMemo(() => people.length ? people : graph.friends.slice(0, 5), [people, graph.friends]);
+  const action = async fn => {
     setBusy(true); setError('');
-    try { await fn(); await refreshSocial(); if (successTab) setTab(successTab); }
+    try { await fn(); await refreshSocial(); }
     catch (err) { setError(err.message || 'Something went wrong.'); }
     finally { setBusy(false); }
   };
@@ -129,23 +122,19 @@ export default function Community({ onOpenMessages }) {
     } catch (err) { setError(err.message || 'Join the group to view its chat.'); }
     finally { setBusy(false); }
   };
-
   const toggleGroup = async group => {
-    await action(async () => {
-      if (group.is_joined) await leaveCommunityGroup(group.id); else await joinCommunityGroup(group.id);
-      await refreshGroups();
-    });
+    setBusy(true); setError('');
+    try { if (group.is_joined) await leaveCommunityGroup(group.id); else await joinCommunityGroup(group.id); await refreshGroups(); }
+    catch (err) { setError(err.message || 'Could not update group membership.'); }
+    finally { setBusy(false); }
   };
-
   const postToGroup = async event => {
     event.preventDefault();
     if (!selectedGroup || !message.trim() || busy) return;
-    await action(async () => {
-      await sendCommunityGroupMessage(selectedGroup.id, message.trim());
-      setMessage('');
-      const fresh = await getCommunityGroupMessages(selectedGroup.id);
-      setGroupMessages(fresh || []);
-    });
+    setBusy(true); setError('');
+    try { await sendCommunityGroupMessage(selectedGroup.id, message.trim()); setMessage(''); setGroupMessages(await getCommunityGroupMessages(selectedGroup.id)); }
+    catch (err) { setError(err.message || 'Could not send message.'); }
+    finally { setBusy(false); }
   };
 
   if (selectedGroup) {
@@ -164,7 +153,7 @@ export default function Community({ onOpenMessages }) {
             <div className="group-chat-header"><div><strong>Group chat</strong><span>Keep it helpful, respectful and Favourit-safe.</span></div><span className="moderated-pill">Moderated</span></div>
             <div className="group-chat-messages">
               {groupMessages.length ? groupMessages.map(item => <div className="group-message" key={item.id}><Avatar person={item} /><div><div className="group-message-head"><strong>{item.display_name || item.username || 'Member'}</strong><span>@{item.username || 'member'}</span><time>{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}</time></div><p>{item.body}</p></div></div>) : <div className="community-empty"><h2>No messages yet.</h2><p>Be the first person to start the conversation.</p></div>}
-+            </div>
+            </div>
             {joined && <form className="group-chat-composer" onSubmit={postToGroup}><input value={message} maxLength={2000} onChange={e => setMessage(e.target.value)} placeholder="Share something with the group…" /><button className="primary" disabled={!message.trim() || busy}>Send</button></form>}
           </div>
           <aside className="community-members"><div className="panel-heading"><h2>Members</h2><span>{groupMembers.length}</span></div>{groupMembers.slice(0, 12).map(member => <div className="member-row" key={member.user_id}><Avatar person={member} /><div><strong>@{member.username || 'member'}</strong><small>{member.display_name || 'Favourit member'}</small></div></div>)}{groupMembers.length > 12 && <small className="members-more">+ {groupMembers.length - 12} more members</small>}</aside>
@@ -192,7 +181,7 @@ export default function Community({ onOpenMessages }) {
         <div className="groups-grid">{groups.slice(0, 6).map(group => <GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup} />)}</div>
       </>}
 
-      {tab === 'friends' && <div className="community-panel-grid"><div className="community-panel wide"><div className="panel-heading"><div><div className="eyebrow">YOUR NETWORK</div><h2>Friends</h2></div><span>{graph.friends.length}</span></div>{graph.friends.length ? graph.friends.map(person => <PersonCard key={person.id} person={person} status="friends" onBlock={() => action(() => blockUser(person.id))} onConnect={() => onOpenMessages?.(person.username)} />) : <div className="community-empty"><h2>No friends yet.</h2><p>Discover people you may want to work with and send your first connection request.</p><button className="primary" onClick={() => setTab('discover')}>Discover people</button></div>}</div></div>}
+      {tab === 'friends' && <div className="community-panel-grid"><div className="community-panel wide"><div className="panel-heading"><div><div className="eyebrow">YOUR NETWORK</div><h2>Friends</h2></div><span>{graph.friends.length}</span></div>{graph.friends.length ? graph.friends.map(person => <PersonCard key={person.id} person={person} status="friends" onBlock={() => action(() => blockUser(person.id))} onMessage={() => onOpenMessages?.(person.username)} />) : <div className="community-empty"><h2>No friends yet.</h2><p>Discover people you may want to work with and send your first connection request.</p><button className="primary" onClick={() => setTab('discover')}>Discover people</button></div>}</div></div>}
 
       {tab === 'groups' && <><div className="community-section-heading"><div><div className="eyebrow">SKILL COMMUNITIES</div><h2>Find your people</h2></div><span>{groups.length} public groups</span></div><div className="groups-grid full">{groups.map(group => <GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup} />)}</div></>}
 
