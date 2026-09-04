@@ -7,6 +7,7 @@ import AdminPanel from './components/AdminPanel';
 import UsernameGate from './components/UsernameGate';
 import UsernameManager from './components/UsernameManager';
 import DirectMessaging from './components/DirectMessaging';
+import SettingsLauncher from './components/SettingsLauncher';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
 import { getMyUsernameStatus } from './lib/usernames';
@@ -18,257 +19,46 @@ const USERNAME_STATUS_TIMEOUT_MS = 5000;
 const REWARD_TIMEOUT_MS = 5000;
 const WALLET_TIMEOUT_MS = 5000;
 const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
-
-function withTimeout(promise, ms, message = 'Request timed out. Please try again.') {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(message)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
-}
-
-function isAdminPanelPath() {
-  return window.location.pathname.replace(/\/+$/, '') === '/adminpanel';
-}
-
-function usernameCacheKey(userId) {
-  return userId ? `favourit_username:${userId}` : '';
-}
-
-function getPendingOnboarding() {
-  try {
-    return JSON.parse(localStorage.getItem(USERNAME_ONBOARDING_KEY) || 'null');
-  } catch (_) {
-    return null;
-  }
-}
+function withTimeout(promise, ms, message = 'Request timed out. Please try again.') { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
+function isAdminPanelPath() { return window.location.pathname.replace(/\/+$/, '') === '/adminpanel'; }
+function usernameCacheKey(userId) { return userId ? `favourit_username:${userId}` : ''; }
+function getPendingOnboarding() { try { return JSON.parse(localStorage.getItem(USERNAME_ONBOARDING_KEY) || 'null'); } catch (_) { return null; } }
 
 export default function AppShell() {
-  const [session, setSession] = useState(null);
-  const [wallet, setWallet] = useState(null);
-  const [usernameStatus, setUsernameStatus] = useState(null);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
-  const [rewardMessage, setRewardMessage] = useState('');
-  const adminPath = isAdminPanelPath();
-
+  const [session, setSession] = useState(null); const [wallet, setWallet] = useState(null); const [profile, setProfile] = useState(null); const [usernameStatus, setUsernameStatus] = useState(null); const [loading, setLoading] = useState(isSupabaseConfigured); const [rewardMessage, setRewardMessage] = useState(''); const adminPath = isAdminPanelPath();
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return undefined;
-
-    let mounted = true;
-    let loadVersion = 0;
-
+    if (!isSupabaseConfigured || !supabase) return undefined; let mounted = true; let loadVersion = 0;
     const hydrateInBackground = async nextSession => {
       const version = ++loadVersion;
-      if (!nextSession) {
-        if (mounted && version === loadVersion) {
-          setSession(null);
-          setWallet(null);
-          setUsernameStatus(null);
-          setRewardMessage('');
-          setLoading(false);
-        }
-        return;
-      }
-
-      // Authentication is the only thing that blocks the first paint.
-      // Everything else hydrates behind the application shell.
-      if (mounted && version === loadVersion) {
-        setSession(nextSession);
-        setLoading(false);
-      }
-
-      const userId = nextSession.user.id;
-      const userEmail = nextSession.user.email?.toLowerCase();
-
-      // Profile + wallet are independent from username and rewards.
-      // getCurrentProfile normally includes the wallet, so only fall back to
-      // getMyWallet when the profile response doesn't contain one.
+      if (!nextSession) { if (mounted && version === loadVersion) { setSession(null); setWallet(null); setProfile(null); setUsernameStatus(null); setRewardMessage(''); setLoading(false); } return; }
+      if (mounted && version === loadVersion) { setSession(nextSession); setLoading(false); }
+      const userId = nextSession.user.id; const userEmail = nextSession.user.email?.toLowerCase();
       try {
-        const profileResult = await withTimeout(
-          getCurrentProfile(),
-          PROFILE_TIMEOUT_MS,
-          'Account data is taking too long.'
-        );
+        const profileResult = await withTimeout(getCurrentProfile(), PROFILE_TIMEOUT_MS, 'Account data is taking too long.');
         if (!mounted || version !== loadVersion) return;
-        if (profileResult?.wallet) setWallet(profileResult.wallet);
-        else {
-          try {
-            const currentWallet = await withTimeout(
-              getMyWallet(),
-              WALLET_TIMEOUT_MS,
-              'Wallet loading timed out.'
-            );
-            if (mounted && version === loadVersion) setWallet(currentWallet || null);
-          } catch (_) {}
-        }
-      } catch (error) {
-        if (mounted && version === loadVersion) {
-          setRewardMessage(error.message || 'Some account data could not be loaded yet.');
-        }
-      }
-
-      // Username state is non-blocking. Cache lets the shell render even if
-      // the first username request is temporarily unavailable.
+        setProfile(profileResult?.profile || null);
+        if (profileResult?.wallet) setWallet(profileResult.wallet); else { try { const currentWallet = await withTimeout(getMyWallet(), WALLET_TIMEOUT_MS, 'Wallet loading timed out.'); if (mounted && version === loadVersion) setWallet(currentWallet || null); } catch (_) {} }
+      } catch (error) { if (mounted && version === loadVersion) setRewardMessage(error.message || 'Some account data could not be loaded yet.'); }
       try {
-        const status = await withTimeout(
-          getMyUsernameStatus(),
-          USERNAME_STATUS_TIMEOUT_MS,
-          'Username setup is taking too long.'
-        );
+        const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
         if (!mounted || version !== loadVersion) return;
-        const normalizedStatus = status?.username
-          ? { ...status, username_chosen: true }
-          : status || null;
-        setUsernameStatus(normalizedStatus);
-        if (normalizedStatus?.username) {
-          localStorage.setItem(usernameCacheKey(userId), normalizedStatus.username);
-          const pending = getPendingOnboarding();
-          if (
-            pending &&
-            ((pending.userId && pending.userId === userId) || pending.email === userEmail)
-          ) {
-            localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-          }
-        }
-      } catch (_) {
-        const cached = localStorage.getItem(usernameCacheKey(userId));
-        if (cached && mounted && version === loadVersion) {
-          setUsernameStatus({ username: cached, username_chosen: true });
-        }
-      }
-
-      // Daily rewards never block rendering and are intentionally attempted
-      // after the shell is already visible.
+        const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null; setUsernameStatus(normalizedStatus);
+        if (normalizedStatus?.username) { localStorage.setItem(usernameCacheKey(userId), normalizedStatus.username); const pending = getPendingOnboarding(); if (pending && ((pending.userId && pending.userId === userId) || pending.email === userEmail)) localStorage.removeItem(USERNAME_ONBOARDING_KEY); }
+      } catch (_) { const cached = localStorage.getItem(usernameCacheKey(userId)); if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true }); }
       if (!adminPath) {
-        try {
-          const reward = await withTimeout(
-            claimDailyReward(),
-            REWARD_TIMEOUT_MS,
-            'Daily reward timed out.'
-          );
-          if (mounted && version === loadVersion && reward?.claimed) {
-            setRewardMessage(
-              reward.reward_fav > 0
-                ? `Daily reward: +${reward.reward_fav} FAV`
-                : 'Daily reward recorded.'
-            );
-            try {
-              const refreshedWallet = await withTimeout(getMyWallet(), WALLET_TIMEOUT_MS);
-              if (mounted && version === loadVersion) setWallet(refreshedWallet || null);
-            } catch (_) {}
-          }
-        } catch (rewardError) {
-          if (
-            mounted &&
-            version === loadVersion &&
-            !String(rewardError?.message || '').toLowerCase().includes('already claimed')
-          ) {
-            setRewardMessage('Daily reward is unavailable right now.');
-          }
-        }
+        try { const reward = await withTimeout(claimDailyReward(), REWARD_TIMEOUT_MS, 'Daily reward timed out.'); if (mounted && version === loadVersion && reward?.claimed) { setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.'); try { const refreshedWallet = await withTimeout(getMyWallet(), WALLET_TIMEOUT_MS); if (mounted && version === loadVersion) setWallet(refreshedWallet || null); } catch (_) {} } }
+        catch (rewardError) { if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) setRewardMessage('Daily reward is unavailable right now.'); }
       }
     };
-
-    const initializeSession = async () => {
-      try {
-        const { data } = await withTimeout(
-          supabase.auth.getSession(),
-          SESSION_TIMEOUT_MS,
-          'Session check timed out.'
-        );
-        if (!mounted) return;
-        hydrateInBackground(data.session);
-      } catch (_) {
-        // Never leave the user on an infinite loader. The auth listener can
-        // still recover a session if Supabase finishes initializing later.
-        if (mounted) setLoading(false);
-      }
-    };
-
+    const initializeSession = async () => { try { const { data } = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS, 'Session check timed out.'); if (!mounted) return; hydrateInBackground(data.session); } catch (_) { if (mounted) setLoading(false); } };
     initializeSession();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      window.setTimeout(() => {
-        if (!mounted) return;
-        if (event === 'SIGNED_OUT') {
-          hydrateInBackground(null);
-          return;
-        }
-        // Sign-in, token refresh and focus changes update state in place.
-        // They never show the full-page startup loader again.
-        hydrateInBackground(nextSession);
-      }, 0);
-    });
-
-    return () => {
-      mounted = false;
-      loadVersion += 1;
-      listener.subscription.unsubscribe();
-    };
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => { window.setTimeout(() => { if (!mounted) return; if (event === 'SIGNED_OUT') { hydrateInBackground(null); return; } hydrateInBackground(nextSession); }, 0); });
+    return () => { mounted = false; loadVersion += 1; listener.subscription.unsubscribe(); };
   }, [adminPath]);
-
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="app-loading">
-        <div>
-          <div className="logo"><span>Favour</span><i>it</i></div>
-          <h2>Connect your Favourit backend</h2>
-          <p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <FavouritLoader
-        title="Connecting to Favourit"
-        subtitle="Checking your secure session…"
-      />
-    );
-  }
-
-  if (!session) return <AuthGate />;
-  if (adminPath) return <AdminPanel />;
-
-  const pending = getPendingOnboarding();
-  const onboardingPending = Boolean(
-    pending &&
-    ((pending.userId && pending.userId === session.user.id) ||
-      pending.email === session.user.email?.toLowerCase())
-  );
-
-  if (onboardingPending && !usernameStatus?.username) {
-    return (
-      <UsernameGate
-        displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''}
-        email={usernameStatus?.email || session.user.email || ''}
-        onComplete={profile => {
-          localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-          localStorage.setItem(usernameCacheKey(session.user.id), profile.username);
-          setUsernameStatus({ ...usernameStatus, ...profile, username_chosen: true });
-        }}
-      />
-    );
-  }
-
-  return (
-    <>
-      <App
-        initialWallet={wallet}
-        session={session}
-        rewardMessage={rewardMessage}
-        usernameStatus={usernameStatus}
-      />
-      <UsernameManager
-        status={usernameStatus}
-        onChanged={status => {
-          localStorage.setItem(usernameCacheKey(session.user.id), status.username);
-          setUsernameStatus(status);
-        }}
-      />
-      <DirectMessaging session={session} usernameStatus={usernameStatus} />
-      <ActivityCenter />
-    </>
-  );
+  if (!isSupabaseConfigured) return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><h2>Connect your Favourit backend</h2><p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p></div></div>;
+  if (loading) return <FavouritLoader title="Connecting to Favourit" subtitle="Checking your secure session…" />;
+  if (!session) return <AuthGate />; if (adminPath) return <AdminPanel />;
+  const pending = getPendingOnboarding(); const onboardingPending = Boolean(pending && ((pending.userId && pending.userId === session.user.id) || pending.email === session.user.email?.toLowerCase()));
+  if (onboardingPending && !usernameStatus?.username) return <UsernameGate displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''} email={usernameStatus?.email || session.user.email || ''} onComplete={profileData => { localStorage.removeItem(USERNAME_ONBOARDING_KEY); localStorage.setItem(usernameCacheKey(session.user.id), profileData.username); setUsernameStatus({ ...usernameStatus, ...profileData, username_chosen: true }); }} />;
+  return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} /><UsernameManager status={usernameStatus} onChanged={status => { localStorage.setItem(usernameCacheKey(session.user.id), status.username); setUsernameStatus(status); }} /><DirectMessaging session={session} usernameStatus={usernameStatus} /><ActivityCenter /><SettingsLauncher session={session} profile={profile} onProfileChanged={next => setProfile(next)} /></>;
 }
