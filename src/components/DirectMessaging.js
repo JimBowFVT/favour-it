@@ -2,6 +2,498 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getDirectMessages, getMyDirectConversations, getOrCreateDirectConversation, searchUsersByUsername, sendDirectMessage } from '../lib/directMessaging';
 import './DirectMessaging.css';
-function createPingContext(){try{const AudioContext=window.AudioContext||window.webkitAudioContext;if(!AudioContext)return null;const ctx=new AudioContext();if(ctx.state==='suspended')ctx.resume().catch(()=>{});return ctx;}catch(_){return null;}}
-function playMessagePing(audioRef,incoming=true){try{const ctx=audioRef.current||createPingContext();if(!ctx)return;audioRef.current=ctx;if(ctx.state==='suspended'){ctx.resume().catch(()=>{});return;}const now=ctx.currentTime;const gain=ctx.createGain();const osc=ctx.createOscillator();osc.type='sine';osc.frequency.setValueAtTime(incoming?740:620,now);osc.frequency.exponentialRampToValueAtTime(incoming?980:760,now+.09);gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(incoming?.11:.055,now+.015);gain.gain.exponentialRampToValueAtTime(.0001,now+.2);osc.connect(gain);gain.connect(ctx.destination);osc.start(now);osc.stop(now+.2);}catch(_){}}
-export default function DirectMessaging({session,usernameStatus}){const[open,setOpen]=useState(false),[query,setQuery]=useState(''),[results,setResults]=useState([]),[conversations,setConversations]=useState([]),[selected,setSelected]=useState(null),[conversationId,setConversationId]=useState(null),[messages,setMessages]=useState([]),[body,setBody]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[otherReadAt,setOtherReadAt]=useState(null),[otherTyping,setOtherTyping]=useState(false),[otherTypingAt,setOtherTypingAt]=useState(0);const endRef=useRef(null),presenceRef=useRef(null),typingTimerRef=useRef(null),audioRef=useRef(null),ownUsername=usernameStatus?.username||session?.user?.user_metadata?.username||'username';const refreshConversations=async()=>{try{const data=await getMyDirectConversations();setConversations(data.map(c=>c.conversation_id===conversationId&&open?{...c,unread_count:0}:c));}catch(e){setError(e.message||'Could not load conversations.');}};const refreshReadState=async id=>{if(!id||!supabase)return;try{const{data,error:readError}=await supabase.rpc('get_conversation_read_state',{p_conversation_id:id});if(readError)throw readError;setOtherReadAt(data?.[0]?.other_last_read_at||null);}catch(_){}};const markCurrentConversationRead=async id=>{if(!id||!supabase)return;try{await supabase.rpc('mark_conversation_read',{p_conversation_id:id});}catch(_){}};const refreshMessages=async id=>{if(!id)return;try{const data=await getDirectMessages(id);setMessages(current=>{const oldLast=current[current.length-1]?.id,newLast=data[data.length-1]?.id;if(newLast&&newLast!==oldLast&&oldLast&&data.some(m=>m.id===newLast&&m.sender_id!==session.user.id))playMessagePing(audioRef,true);return data;});}catch(_){}};useEffect(()=>{if(session)refreshConversations();},[session,conversationId,open]);useEffect(()=>{if(!open||!query.trim()){setResults([]);return undefined;}const timer=window.setTimeout(()=>searchUsersByUsername(query).then(setResults).catch(e=>setError(e.message||'Search failed.')),220);return()=>window.clearTimeout(timer);},[open,query]);useEffect(()=>{if(!conversationId||!supabase)return undefined;let active=true;const setTypingState=(isTyping,timestamp=Date.now())=>{if(!active)return;if(isTyping){setOtherTyping(true);setOtherTypingAt(timestamp);}else{setOtherTyping(false);setOtherTypingAt(0);}};const refreshPresence=()=>{const state=channel.presenceState();const others=Object.values(state).flat().filter(p=>p.user_id!==session.user.id);const typingEntry=others.find(p=>p.typing&&Date.now()-Number(p.typing_at||0)<5000);if(typingEntry)setTypingState(true,Number(typingEntry.typing_at));else setTypingState(false);};const load=async()=>{try{const data=await getDirectMessages(conversationId);if(!active)return;setMessages(data);await markCurrentConversationRead(conversationId);await refreshReadState(conversationId);refreshConversations();}catch(e){if(active)setError(e.message||'Could not load messages.');}};load();const channel=supabase.channel(`direct-chat-${conversationId}`,{config:{broadcast:{self:false},presence:{key:session.user.id}}}).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`conversation_id=eq.${conversationId}`},payload=>{const message=payload.new;if(message.sender_id===session.user.id)return;setMessages(current=>current.some(m=>m.id===message.id)?current:[...current,message]);playMessagePing(audioRef,true);markCurrentConversationRead(conversationId);refreshConversations();refreshReadState(conversationId);}).on('postgres_changes',{event:'INSERT',schema:'public',table:'conversation_reads',filter:`conversation_id=eq.${conversationId}`},()=>refreshReadState(conversationId)).on('postgres_changes',{event:'UPDATE',schema:'public',table:'conversation_reads',filter:`conversation_id=eq.${conversationId}`},()=>refreshReadState(conversationId)).on('broadcast',{event:'typing'},payload=>{if(payload.payload?.user_id===session.user.id)return;setTypingState(Boolean(payload.payload?.typing),Number(payload.payload?.typing_at||Date.now()));}).on('presence',{event:'sync'},refreshPresence).on('presence',{event:'join'},refreshPresence).on('presence',{event:'leave'},refreshPresence).subscribe(async status=>{if(status==='SUBSCRIBED')await channel.track({user_id:session.user.id,typing:false,typing_at:0});});const pollTimer=window.setInterval(()=>{refreshMessages(conversationId);refreshReadState(conversationId);},1000),readHeartbeat=window.setInterval(()=>markCurrentConversationRead(conversationId),1500),typingExpiry=window.setInterval(()=>{if(otherTypingAt&&Date.now()-otherTypingAt>=5000)setTypingState(false);},1000);presenceRef.current=channel;return()=>{active=false;window.clearInterval(pollTimer);window.clearInterval(readHeartbeat);window.clearInterval(typingExpiry);try{channel.send({type:'broadcast',event:'typing',payload:{user_id:session.user.id,typing:false,typing_at:0}}).catch(()=>{});channel.untrack();supabase.removeChannel(channel);}catch(_){}presenceRef.current=null;setOtherTyping(false);setOtherTypingAt(0);setOtherReadAt(null);};},[conversationId,session?.user?.id]);useEffect(()=>{if(!session||!supabase)return undefined;const channel=supabase.channel(`direct-inbox-${session.user.id}`).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{if(payload.new.sender_id===session.user.id)return;if(payload.new.conversation_id!==conversationId)playMessagePing(audioRef,true);refreshConversations();}).subscribe();const timer=window.setInterval(refreshConversations,8000);return()=>{window.clearInterval(timer);try{supabase.removeChannel(channel);}catch(_){}};},[session?.user?.id,conversationId,open]);useEffect(()=>()=>{window.clearTimeout(typingTimerRef.current);try{audioRef.current?.close();}catch(_){}},[]);useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'});},[messages,otherTyping]);const unreadCount=conversations.reduce((sum,c)=>sum+(c.conversation_id===conversationId&&open?0:Number(c.unread_count||0)),0);const openConversation=async(user,existingId=null)=>{setBusy(true);setError('');try{const id=existingId||await getOrCreateDirectConversation(user.username);setSelected(user);setConversationId(id);setQuery('');setResults([]);setOpen(true);if(!audioRef.current)audioRef.current=createPingContext();}catch(e){setError(e.message||'Could not open conversation.');}finally{setBusy(false);}};const openMessenger=()=>{setOpen(true);setError('');refreshConversations();if(!audioRef.current)audioRef.current=createPingContext();};const leaveConversation=async()=>{const id=conversationId;await markCurrentConversationRead(id);if(id)setConversations(current=>current.map(c=>c.conversation_id===id?{...c,unread_count:0}:c));setSelected(null);setConversationId(null);setMessages([]);setBody('');setOtherTyping(false);setOtherReadAt(null);refreshConversations();};const closeMessenger=async()=>{const id=conversationId;await markCurrentConversationRead(id);if(id)setConversations(current=>current.map(c=>c.conversation_id===id?{...c,unread_count:0}:c));setOpen(false);};const updateTyping=async value=>{const channel=presenceRef.current;if(!channel)return;const payload={user_id:session.user.id,typing:value,typing_at:value?Date.now():0};try{await channel.track(payload);await channel.send({type:'broadcast',event:'typing',payload});}catch(_){}};const handleBodyChange=e=>{const value=e.target.value;setBody(value);updateTyping(Boolean(value.trim()));window.clearTimeout(typingTimerRef.current);if(value.trim())typingTimerRef.current=window.setTimeout(()=>updateTyping(false),5000);};const send=async e=>{e.preventDefault();if(!body.trim()||!conversationId||busy)return;setBusy(true);setError('');try{const msg=await sendDirectMessage(conversationId,body);setMessages(v=>v.some(m=>m.id===msg.id)?v:[...v,msg]);setBody('');await updateTyping(false);playMessagePing(audioRef,false);refreshConversations();}catch(e){setError(e.message||'Could not send message.');}finally{setBusy(false);}};const lastMine=[...messages].reverse().find(m=>m.sender_id===session.user.id),isLastMineRead=Boolean(lastMine?.created_at&&otherReadAt&&new Date(otherReadAt).getTime()>=new Date(lastMine.created_at).getTime()),conversationStatus=otherTyping?'typing…':isLastMineRead?'Read':lastMine?'Sent':'Online chat';if(!session)return null;return <><button className="dm-fab" onClick={openMessenger} aria-label="Messages"><span className="dm-fab-icon">⌁</span><span>Messages</span>{unreadCount>0&&<b className="dm-unread-dot">{unreadCount>9?'9+':unreadCount}</b>}</button>{open&&<div className="dm-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)closeMessenger();}}><section className="dm-panel"><header className="dm-header"><div className="dm-header-identity"><span className="dm-header-handle">@{ownUsername}</span><span className="dm-header-title">Messages</span>{selected&&<div className="dm-chatting-with"><span>chatting with</span><strong>{selected.display_name||`@${selected.username}`}</strong><small>@{selected.username}</small><em className={otherTyping?'typing-status':''}>{conversationStatus}</em></div>}</div><button className="dm-close" onClick={closeMessenger} aria-label="Close messages">×</button></header>{error&&<div className="dm-error">{error}<button onClick={()=>setError('')} aria-label="Dismiss error">×</button></div>}{!selected?<><div className="dm-search"><span>@</span><input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Message someone by @username…"/></div>{query.trim()&&<div className="dm-results">{results.map(user=><button key={user.user_id} onClick={()=>openConversation(user)} disabled={busy}><div className="dm-avatar">{(user.display_name||user.username||'U').slice(0,1).toUpperCase()}</div><div><strong>{user.display_name||user.username}</strong><span>@{user.username}</span></div><b>→</b></button>)}{!results.length&&<p className="dm-empty">No one found for @{query.replace(/^@/,'')}.</p>}</div>}<div className="dm-section-title">Recent conversations</div><div className="dm-conversation-list">{conversations.map(c=><button key={c.conversation_id} className={`dm-conversation ${Number(c.unread_count)&&!(c.conversation_id===conversationId&&open)?'unread':''}`} onClick={()=>openConversation({username:c.other_username,display_name:c.other_display_name,avatar_url:c.other_avatar_url},c.conversation_id)}><div className="dm-avatar">{(c.other_display_name||c.other_username||'U').slice(0,1).toUpperCase()}</div><div className="dm-conversation-copy"><strong>{c.other_display_name||`@${c.other_username}`}</strong><span>@{c.other_username}</span><small>{c.last_message||'Start a conversation'}</small></div><div className="dm-conversation-meta">{c.last_message_at&&<time>{new Date(c.last_message_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</time>}{Number(c.unread_count)>0&&!(c.conversation_id===conversationId&&open)&&<b>{c.unread_count>9?'9+':c.unread_count}</b>}</div></button>)}{!conversations.length&&!query.trim()&&<div className="dm-empty">Your conversations will appear here.<br/><span>Search an @username above to start one.</span></div>}</div></>:<><div className="dm-thread">{messages.length?messages.map(m=><div className={m.sender_id===session.user.id?'dm-message mine':'dm-message'} key={m.id}><span>{m.body}</span><small>{new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}{m.sender_id===session.user.id&&m.id===lastMine?.id&&<b className={`dm-receipt ${isLastMineRead?'read':''}`}>{isLastMineRead?'✓✓ Read':'✓ Sent'}</b>}</small></div>):<div className="dm-empty">Say hello to @{selected.username} 👋</div>}<div ref={endRef}/></div>{otherTyping&&<div className="dm-typing" role="status" aria-live="polite"><i></i><i></i><i></i><span>{selected.display_name||`@${selected.username}`} is typing</span></div>}<form className="dm-compose" onSubmit={send}><input value={body} onChange={handleBodyChange} onBlur={()=>updateTyping(false)} maxLength={5000} placeholder={`Message @${selected.username}…`} autoFocus/><button className="primary" disabled={busy||!body.trim()}>{busy?'…':'Send'}</button></form><button className="dm-new" onClick={leaveConversation}>← All conversations</button></>}</section></div>}</>}
+
+function createPingContext() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  } catch (_) {
+    return null;
+  }
+}
+
+function playMessagePing(audioRef, incoming = true) {
+  try {
+    const ctx = audioRef.current || createPingContext();
+    if (!ctx) return;
+    audioRef.current = ctx;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+      return;
+    }
+    const now = ctx.currentTime;
+    const gain = ctx.createGain();
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(incoming ? 740 : 620, now);
+    osc.frequency.exponentialRampToValueAtTime(incoming ? 980 : 760, now + 0.09);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(incoming ? 0.11 : 0.055, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (_) {}
+}
+
+export default function DirectMessaging({ session, usernameStatus }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [conversationId, setConversationId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [otherReadAt, setOtherReadAt] = useState(null);
+  const [typingByConversation, setTypingByConversation] = useState({});
+
+  const endRef = useRef(null);
+  const audioRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const typingChannelsRef = useRef(new Map());
+  const typingStateRef = useRef({});
+  const bodyRef = useRef('');
+  const ownUsername = usernameStatus?.username || session?.user?.user_metadata?.username || 'username';
+
+  const setConversationTyping = (id, isTyping, timestamp = Date.now()) => {
+    if (!id) return;
+    typingStateRef.current[id] = isTyping ? timestamp : 0;
+    setTypingByConversation(current => {
+      const next = { ...current };
+      if (isTyping) next[id] = timestamp;
+      else delete next[id];
+      return next;
+    });
+  };
+
+  const readTypingState = channel => {
+    const state = channel.presenceState();
+    const now = Date.now();
+    const others = Object.values(state)
+      .flat()
+      .filter(item => item.user_id !== session.user.id);
+    const typingEntry = others
+      .filter(item => item.typing && now - Number(item.typing_at || 0) < 6000)
+      .sort((a, b) => Number(b.typing_at || 0) - Number(a.typing_at || 0))[0];
+    setConversationTyping(
+      channel.__favouritConversationId,
+      Boolean(typingEntry),
+      Number(typingEntry?.typing_at || now),
+    );
+  };
+
+  const ensureTypingChannel = async id => {
+    if (!id || !supabase || !session?.user?.id) return null;
+    const existing = typingChannelsRef.current.get(id);
+    if (existing) return existing;
+
+    const channel = supabase.channel(`direct-typing-${id}`, {
+      config: {
+        broadcast: { self: false },
+        presence: { key: session.user.id },
+      },
+    });
+    channel.__favouritConversationId = id;
+    channel
+      .on('broadcast', { event: 'typing' }, payload => {
+        if (payload.payload?.user_id === session.user.id) return;
+        const isTyping = Boolean(payload.payload?.typing);
+        const timestamp = Number(payload.payload?.typing_at || Date.now());
+        setConversationTyping(id, isTyping, timestamp);
+      })
+      .on('presence', { event: 'sync' }, () => readTypingState(channel))
+      .on('presence', { event: 'join' }, () => readTypingState(channel))
+      .on('presence', { event: 'leave' }, () => readTypingState(channel));
+
+    typingChannelsRef.current.set(id, channel);
+    await new Promise(resolve => {
+      channel.subscribe(async status => {
+        if (status === 'SUBSCRIBED') {
+          const ownTyping = Boolean(bodyRef.current.trim()) && id === conversationId;
+          await channel.track({
+            user_id: session.user.id,
+            typing: ownTyping,
+            typing_at: ownTyping ? Date.now() : 0,
+          });
+          readTypingState(channel);
+          resolve();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          resolve();
+        }
+      });
+    });
+    return channel;
+  };
+
+  const refreshConversations = async () => {
+    try {
+      const data = await getMyDirectConversations();
+      setConversations(data.map(c => (
+        c.conversation_id === conversationId && open ? { ...c, unread_count: 0 } : c
+      )));
+    } catch (e) {
+      setError(e.message || 'Could not load conversations.');
+    }
+  };
+
+  const refreshReadState = async id => {
+    if (!id || !supabase) return;
+    try {
+      const { data, error: readError } = await supabase.rpc('get_conversation_read_state', { p_conversation_id: id });
+      if (readError) throw readError;
+      setOtherReadAt(data?.[0]?.other_last_read_at || null);
+    } catch (_) {}
+  };
+
+  const markCurrentConversationRead = async id => {
+    if (!id || !supabase) return;
+    try {
+      await supabase.rpc('mark_conversation_read', { p_conversation_id: id });
+    } catch (_) {}
+  };
+
+  const refreshMessages = async id => {
+    if (!id) return;
+    try {
+      const data = await getDirectMessages(id);
+      setMessages(current => {
+        const oldLast = current[current.length - 1]?.id;
+        const newLast = data[data.length - 1]?.id;
+        if (newLast && newLast !== oldLast && oldLast && data.some(m => m.id === newLast && m.sender_id !== session.user.id)) {
+          playMessagePing(audioRef, true);
+        }
+        return data;
+      });
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    if (session) refreshConversations();
+  }, [session, conversationId, open]);
+
+  useEffect(() => {
+    if (!open || !query.trim()) {
+      setResults([]);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      searchUsersByUsername(query)
+        .then(setResults)
+        .catch(e => setError(e.message || 'Search failed.'));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [open, query]);
+
+  // Keep a lightweight realtime typing channel for every conversation visible in the inbox.
+  // This is deliberately separate from the message thread channel so the preview keeps
+  // receiving typing state even when the actual conversation is closed.
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) return undefined;
+    const ids = new Set(conversations.map(c => c.conversation_id).filter(Boolean));
+    if (conversationId) ids.add(conversationId);
+    ids.forEach(id => { ensureTypingChannel(id).catch(() => {}); });
+
+    typingChannelsRef.current.forEach((channel, id) => {
+      if (!ids.has(id)) {
+        try { channel.untrack(); } catch (_) {}
+        try { supabase.removeChannel(channel); } catch (_) {}
+        typingChannelsRef.current.delete(id);
+        setConversationTyping(id, false);
+      }
+    });
+  }, [conversations, conversationId, session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !supabase) return undefined;
+    return () => {
+      typingChannelsRef.current.forEach(channel => {
+        try { channel.untrack(); } catch (_) {}
+        try { supabase.removeChannel(channel); } catch (_) {}
+      });
+      typingChannelsRef.current.clear();
+      typingStateRef.current = {};
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!conversationId || !supabase) return undefined;
+    let active = true;
+
+    const load = async () => {
+      try {
+        const data = await getDirectMessages(conversationId);
+        if (!active) return;
+        setMessages(data);
+        await markCurrentConversationRead(conversationId);
+        await refreshReadState(conversationId);
+        refreshConversations();
+        await ensureTypingChannel(conversationId);
+      } catch (e) {
+        if (active) setError(e.message || 'Could not load messages.');
+      }
+    };
+
+    load();
+    const channel = supabase
+      .channel(`direct-chat-${conversationId}`, { config: { broadcast: { self: false }, presence: { key: session.user.id } } })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, payload => {
+        const message = payload.new;
+        if (message.sender_id === session.user.id) return;
+        setMessages(current => current.some(m => m.id === message.id) ? current : [...current, message]);
+        playMessagePing(audioRef, true);
+        markCurrentConversationRead(conversationId);
+        refreshConversations();
+        refreshReadState(conversationId);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversation_reads', filter: `conversation_id=eq.${conversationId}` }, () => refreshReadState(conversationId))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversation_reads', filter: `conversation_id=eq.${conversationId}` }, () => refreshReadState(conversationId))
+      .subscribe();
+
+    const pollTimer = window.setInterval(() => {
+      refreshMessages(conversationId);
+      refreshReadState(conversationId);
+      const typingChannel = typingChannelsRef.current.get(conversationId);
+      if (typingChannel) readTypingState(typingChannel);
+    }, 1000);
+    const readHeartbeat = window.setInterval(() => markCurrentConversationRead(conversationId), 1500);
+
+    return () => {
+      active = false;
+      window.clearInterval(pollTimer);
+      window.clearInterval(readHeartbeat);
+      try { supabase.removeChannel(channel); } catch (_) {}
+      setMessages([]);
+      setOtherReadAt(null);
+    };
+  }, [conversationId, session?.user?.id]);
+
+  useEffect(() => {
+    if (!session || !supabase) return undefined;
+    const channel = supabase
+      .channel(`direct-inbox-${session.user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        if (payload.new.sender_id === session.user.id) return;
+        if (payload.new.conversation_id !== conversationId) playMessagePing(audioRef, true);
+        refreshConversations();
+      })
+      .subscribe();
+    const timer = window.setInterval(refreshConversations, 8000);
+    return () => {
+      window.clearInterval(timer);
+      try { supabase.removeChannel(channel); } catch (_) {}
+    };
+  }, [session?.user?.id, conversationId]);
+
+  useEffect(() => () => {
+    window.clearTimeout(typingTimerRef.current);
+    try { audioRef.current?.close(); } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    bodyRef.current = body;
+  }, [body]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, typingByConversation]);
+
+  const unreadCount = conversations.reduce((sum, c) => (
+    sum + (c.conversation_id === conversationId && open ? 0 : Number(c.unread_count || 0))
+  ), 0);
+
+  const openConversation = async (user, existingId = null) => {
+    setBusy(true);
+    setError('');
+    try {
+      const id = existingId || await getOrCreateDirectConversation(user.username);
+      await ensureTypingChannel(id);
+      setSelected(user);
+      setConversationId(id);
+      setQuery('');
+      setResults([]);
+      setOpen(true);
+      if (!audioRef.current) audioRef.current = createPingContext();
+      refreshConversations();
+    } catch (e) {
+      setError(e.message || 'Could not open conversation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openMessenger = () => {
+    setOpen(true);
+    setError('');
+    refreshConversations();
+    if (!audioRef.current) audioRef.current = createPingContext();
+  };
+
+  const leaveConversation = async () => {
+    const id = conversationId;
+    await markCurrentConversationRead(id);
+    if (id) setConversations(current => current.map(c => c.conversation_id === id ? { ...c, unread_count: 0 } : c));
+    setSelected(null);
+    setConversationId(null);
+    setMessages([]);
+    setBody('');
+    await updateTyping(false, id);
+    setOtherReadAt(null);
+    refreshConversations();
+  };
+
+  const closeMessenger = async () => {
+    const id = conversationId;
+    await markCurrentConversationRead(id);
+    if (id) setConversations(current => current.map(c => c.conversation_id === id ? { ...c, unread_count: 0 } : c));
+    await updateTyping(false, id);
+    setOpen(false);
+  };
+
+  const updateTyping = async (value, id = conversationId) => {
+    if (!id || !supabase || !session?.user?.id) return;
+    let channel = typingChannelsRef.current.get(id);
+    if (!channel) {
+      channel = await ensureTypingChannel(id);
+    }
+    if (!channel) return;
+    const payload = {
+      user_id: session.user.id,
+      typing: Boolean(value),
+      typing_at: value ? Date.now() : 0,
+    };
+    try {
+      await channel.track(payload);
+      await channel.send({ type: 'broadcast', event: 'typing', payload });
+    } catch (_) {}
+  };
+
+  const handleBodyChange = e => {
+    const value = e.target.value;
+    setBody(value);
+    bodyRef.current = value;
+    updateTyping(Boolean(value.trim()));
+    window.clearTimeout(typingTimerRef.current);
+    if (value.trim()) {
+      typingTimerRef.current = window.setTimeout(() => updateTyping(false), 5000);
+    }
+  };
+
+  const send = async e => {
+    e.preventDefault();
+    if (!body.trim() || !conversationId || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const msg = await sendDirectMessage(conversationId, body);
+      setMessages(v => v.some(m => m.id === msg.id) ? v : [...v, msg]);
+      setBody('');
+      bodyRef.current = '';
+      window.clearTimeout(typingTimerRef.current);
+      await updateTyping(false);
+      playMessagePing(audioRef, false);
+      refreshConversations();
+    } catch (e) {
+      setError(e.message || 'Could not send message.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!session) return null;
+
+  const currentTyping = Boolean(conversationId && typingByConversation[conversationId]);
+  const lastMine = [...messages].reverse().find(m => m.sender_id === session.user.id);
+  const isLastMineRead = Boolean(
+    lastMine?.created_at &&
+    otherReadAt &&
+    new Date(otherReadAt).getTime() >= new Date(lastMine.created_at).getTime(),
+  );
+  const conversationStatus = currentTyping ? 'typing…' : isLastMineRead ? 'Read' : lastMine ? 'Sent' : 'Online chat';
+
+  return <>
+    <button className="dm-fab" onClick={openMessenger} aria-label="Messages">
+      <span className="dm-fab-icon">⌁</span>
+      <span>Messages</span>
+      {unreadCount > 0 && <b className="dm-unread-dot">{unreadCount > 9 ? '9+' : unreadCount}</b>}
+    </button>
+
+    {open && <div className="dm-overlay" onMouseDown={e => { if (e.target === e.currentTarget) closeMessenger(); }}>
+      <section className="dm-panel">
+        <header className="dm-header">
+          <div className="dm-header-identity">
+            <span className="dm-header-handle">@{ownUsername}</span>
+            <span className="dm-header-title">Messages</span>
+            {selected && <div className="dm-chatting-with">
+              <span>chatting with</span>
+              <strong>{selected.display_name || `@${selected.username}`}</strong>
+              <small>@{selected.username}</small>
+              <em className={currentTyping ? 'typing-status' : ''}>{conversationStatus}</em>
+            </div>}
+          </div>
+          <button className="dm-close" onClick={closeMessenger} aria-label="Close messages">×</button>
+        </header>
+
+        {error && <div className="dm-error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
+
+        {!selected ? <>
+          <div className="dm-search">
+            <span>@</span>
+            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Message someone by @username…" />
+          </div>
+          {query.trim() && <div className="dm-results">
+            {results.map(user => <button key={user.user_id} onClick={() => openConversation(user)} disabled={busy}>
+              <div className="dm-avatar">{(user.display_name || user.username || 'U').slice(0, 1).toUpperCase()}</div>
+              <div><strong>{user.display_name || user.username}</strong><span>@{user.username}</span></div>
+              <b>→</b>
+            </button>)}
+            {!results.length && <p className="dm-empty">No one found for @{query.replace(/^@/, '')}.</p>}
+          </div>}
+          <div className="dm-section-title">Recent conversations</div>
+          <div className="dm-conversation-list">
+            {conversations.map(c => {
+              const isTyping = Boolean(typingByConversation[c.conversation_id]);
+              return <button
+                key={c.conversation_id}
+                className={`dm-conversation ${Number(c.unread_count) && !(c.conversation_id === conversationId && open) ? 'unread' : ''}`}
+                onClick={() => openConversation({ username: c.other_username, display_name: c.other_display_name, avatar_url: c.other_avatar_url }, c.conversation_id)}
+              >
+                <div className="dm-avatar">{(c.other_display_name || c.other_username || 'U').slice(0, 1).toUpperCase()}</div>
+                <div className="dm-conversation-copy">
+                  <strong>{c.other_display_name || `@${c.other_username}`}</strong>
+                  <span>@{c.other_username}</span>
+                  <small className={isTyping ? 'dm-preview-typing' : ''}>{isTyping ? 'typing…' : (c.last_message || 'Start a conversation')}</small>
+                </div>
+                <div className="dm-conversation-meta">
+                  {c.last_message_at && !isTyping && <time>{new Date(c.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>}
+                  {Number(c.unread_count) > 0 && !(c.conversation_id === conversationId && open) && <b>{c.unread_count > 9 ? '9+' : c.unread_count}</b>}
+                </div>
+              </button>;
+            })}
+            {!conversations.length && !query.trim() && <div className="dm-empty">Your conversations will appear here.<br /><span>Search an @username above to start one.</span></div>}
+          </div>
+        </> : <>
+          <div className="dm-thread">
+            {messages.length ? messages.map(m => <div className={m.sender_id === session.user.id ? 'dm-message mine' : 'dm-message'} key={m.id}>
+              <span>{m.body}</span>
+              <small>{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{m.sender_id === session.user.id && m.id === lastMine?.id && <b className={`dm-receipt ${isLastMineRead ? 'read' : ''}`}>{isLastMineRead ? '✓✓ Read' : '✓ Sent'}</b>}</small>
+            </div>) : <div className="dm-empty">Say hello to @{selected.username} 👋</div>}
+            <div ref={endRef} />
+          </div>
+          {currentTyping && <div className="dm-typing" role="status" aria-live="polite"><i></i><i></i><i></i><span>{selected.display_name || `@${selected.username}`} is typing</span></div>}
+          <form className="dm-compose" onSubmit={send}>
+            <input value={body} onChange={handleBodyChange} onBlur={() => updateTyping(false)} maxLength={5000} placeholder={`Message @${selected.username}…`} autoFocus />
+            <button className="primary" disabled={busy || !body.trim()}>{busy ? '…' : 'Send'}</button>
+          </form>
+          <button className="dm-new" onClick={leaveConversation}>← All conversations</button>
+        </>}
+      </section>
+    </div>}
+  </>;
+}
