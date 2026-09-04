@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAccountSecurityStatus, changePassword, sendPasswordReset, updateProfileBasics } from '../lib/accountSecurity';
+import './AccountSettings.css';
 
 export default function AccountSettings({ session, profile, onProfileChanged, onClose }) {
   const [displayName, setDisplayName] = useState(profile?.display_name || session?.user?.user_metadata?.display_name || '');
@@ -37,7 +38,7 @@ export default function AccountSettings({ session, profile, onProfileChanged, on
     <button className="username-manager-close" onClick={onClose} aria-label="Close settings">×</button>
     <div className="eyebrow">ACCOUNT & SECURITY</div><h2 id="settings-title">Your settings.</h2><p className="settings-intro">Keep your profile current and your account protected.</p>
     <form onSubmit={saveProfile} className="settings-section"><h3>Profile</h3><label>Display name<input value={displayName} maxLength={80} onChange={e => setDisplayName(e.target.value)} /></label><label>Bio<textarea value={bio} maxLength={500} rows="4" onChange={e => setBio(e.target.value)} /><small>{bio.length}/500</small></label><button className="primary" disabled={busy || !displayName.trim()}>Save profile</button></form>
-    <div className="settings-section"><h3>Sign-in security</h3><div className="security-row"><span>Email</span><strong>{security?.email || session?.user?.email || '—'}</strong><em>{security?.emailConfirmedAt ? 'Verified' : 'Needs verification'}</em></div><div className="security-row"><span>Last sign in</span><strong>{security?.lastSignInAt ? new Date(security.lastSignInAt).toLocaleString() : '—'}</strong></div><form onSubmit={savePassword}><label>New password<input type="password" value={password} minLength={8} maxLength={128} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" /></label><button className="secondary" disabled={busy || password.length < 8}>Change password</button></form><button className="text-button" disabled={busy} onClick={resetPassword}>Send password reset email</button></div>
+    <div className="settings-section"><h3>Sign-in security</h3><div className="security-row"><span>Email</span><strong>{security?.email || session?.user?.email || '—'}</strong><em>{security?.emailConfirmedAt ? 'Verified' : 'Needs verification'}</em></div><div className="security-row"><span>Last sign in</span><strong>{security?.lastSignInAt ? new Date(security.lastSignInAt).toLocaleString() : '—'}</strong></div><form onSubmit={savePassword}><label>New password<input type="password" value={password} minLength={8} maxLength={128} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" /></label><button className="secondary" disabled={busy || password.length < 8}>Change password</button></form><button type="button" className="text-button" disabled={busy} onClick={resetPassword}>Send password reset email</button></div>
     {saved && <div className="settings-success">✓ {saved}</div>}{error && <div className="username-manager-error">{error}</div>}
   </section></div>;
 }
