@@ -40,10 +40,11 @@ function playMessagePing(audioRef, incoming = true) {
   } catch (_) {}
 }
 
-// Typing is intentionally independent from messages/read receipts.
-// A signal is emitted from each real input event. The receiver owns a strict
-// five-second TTL from the newest input timestamp. No heartbeat is allowed to
-// extend the indicator after the typer actually stops entering characters.
+// Typing is independent from messages/read receipts.
+// Every real input refreshes the timestamp. The receiver keeps the indicator
+// for exactly five seconds after the newest typing signal. There is no typing
+// heartbeat, so leaving text in the box cannot keep someone looking "typing"
+// forever after they stopped entering characters.
 const TYPING_TTL_MS = 5000;
 
 export default function DirectMessaging({ session, usernameStatus }) {
@@ -80,8 +81,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
     const previousTimestamp = typingLastEventRef.current.get(id) || 0;
 
     if (isTyping) {
-      // Realtime delivery can be duplicated/out of order. Never allow an old
-      // packet to resurrect typing after a newer packet has already expired.
+      // Realtime can deliver duplicated/out-of-order packets. Only a newer
+      // real input is allowed to refresh the visible typing state.
       if (incomingTimestamp < previousTimestamp) return;
       typingLastEventRef.current.set(id, incomingTimestamp);
       typingLastSeenRef.current.set(id, incomingTimestamp);
@@ -119,9 +120,7 @@ export default function DirectMessaging({ session, usernameStatus }) {
     if (existing) return existing.readyPromise;
 
     const channel = supabase.channel(`direct-typing-${id}`, {
-      config: {
-        broadcast: { self: false },
-      },
+      config: { broadcast: { self: false } },
     });
 
     let resolveReady;
@@ -139,11 +138,17 @@ export default function DirectMessaging({ session, usernameStatus }) {
       .subscribe(status => {
         const current = typingChannelsRef.current.get(id);
         if (!current || current.channel !== channel) return;
+
         if (status === 'SUBSCRIBED') {
           current.subscribed = true;
           resolveReady(channel);
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           current.subscribed = false;
+          typingChannelsRef.current.delete(id);
+          try { supabase.removeChannel(channel); } catch (_) {}
           resolveReady(null);
         }
       });
@@ -173,11 +178,11 @@ export default function DirectMessaging({ session, usernameStatus }) {
     const timestamp = Date.now();
     ownTypingAtRef.current.set(id, timestamp);
 
-    // Queue behind channel subscription so the first character is not lost.
+    // Queue behind the realtime subscription so the first character is not
+    // silently lost while the channel is still handshaking.
     ensureTypingChannel(id).then(channel => {
       if (!channel) return;
-      const latestLocalInput = ownTypingAtRef.current.get(id);
-      if (!latestLocalInput) return;
+      if (!ownTypingAtRef.current.has(id)) return;
       sendTypingSignal(id);
     }).catch(() => {});
   };
@@ -185,8 +190,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
   const stopLocalTyping = id => {
     if (!id) return;
     ownTypingAtRef.current.delete(id);
-    // Never send typing=false on blur, send, navigation, or chat switching.
-    // The receiver must keep the last real typing signal for five seconds.
+    // Intentionally no typing=false packet. The other user gets the required
+    // five-second grace period after the last actual typing signal.
   };
 
   const refreshConversations = async () => {
@@ -244,9 +249,9 @@ export default function DirectMessaging({ session, usernameStatus }) {
     return () => window.clearTimeout(timer);
   }, [open, query]);
 
-  // The same conversation channel is kept alive while the inbox is open and
-  // reused by the thread. That makes the list indicator and in-chat indicator
-  // one continuous state instead of two competing implementations.
+  // One persistent channel per conversation is shared by the inbox preview
+  // and the thread. Opening a chat therefore changes only the presentation;
+  // it does not create a new typing state or lose the existing indicator.
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     const ids = new Set(conversations.map(c => c.conversation_id).filter(Boolean));
@@ -265,9 +270,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
     });
   }, [conversations, conversationId, session?.user?.id]);
 
-  // Receiver expiry is deliberately independent of message polling. A person
-  // can keep typing state visible through several messages and while switching
-  // between inbox and thread; only five seconds of silence removes it.
+  // Receiver expiry is independent of message polling. Messages, read
+  // receipts, navigation, and sending cannot prematurely clear typing.
   useEffect(() => {
     if (!session?.user?.id || !supabase) return undefined;
     const timer = window.setInterval(() => {
@@ -418,8 +422,8 @@ export default function DirectMessaging({ session, usernameStatus }) {
     try {
       const msg = await sendDirectMessage(conversationId, body);
       setMessages(current => current.some(m => m.id === msg.id) ? current : [...current, msg]);
-      // Keep the receiver's indicator alive until five seconds after the last
-      // actual input signal. Sending a message must not erase it immediately.
+      // Sending must not erase the other person's typing state. It expires
+      // naturally five seconds after their last actual input.
       stopLocalTyping(conversationId);
       setBody('');
       bodyRef.current = '';
