@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { resolveServiceCategory } from '../data/serviceCategories';
 
 const MICRO_FAV = 1000000;
 
@@ -11,10 +12,11 @@ const normalizeDeal = (row, sellerName) => ({
   rating: Number(row.rating || 5),
   reviews: Number(row.reviews || 0),
   price: Number(row.price_fav || 0) / MICRO_FAV,
-  category: row.category,
+  category: resolveServiceCategory(row.category)?.label || row.category,
   delivery: `${row.delivery_days} days`,
   deliveryDays: row.delivery_days,
   status: row.status,
+  createdAt: row.created_at || null,
 });
 
 async function getSellerNames(rows) {
@@ -63,10 +65,13 @@ export async function createDeal({ title, description, category, price, delivery
     throw new Error('Choose a delivery time between 1 and 30 days.');
   }
 
+  const selectedCategory = resolveServiceCategory(category);
+  if (!selectedCategory) throw new Error('Choose an approved Favourit service category.');
+
   const { data, error } = await supabase.rpc('create_deal', {
     p_title: title.trim(),
     p_description: description.trim(),
-    p_category: category.trim(),
+    p_category: selectedCategory.label,
     p_price_fav: Math.round(numericPrice * MICRO_FAV),
     p_delivery_days: deliveryDays,
   });
