@@ -17,3 +17,8 @@ export const leaveCommunityGroup = groupId => call('leave_community_group', { p_
 export const getCommunityGroupMessages = groupId => call('get_community_group_messages', { p_group_id: groupId });
 export const sendCommunityGroupMessage = (groupId, body) => call('send_community_group_message', { p_group_id: groupId, p_body: body });
 export const getCommunityGroupMembers = groupId => call('get_community_group_members', { p_group_id: groupId });
+export const reportCommunityGroupMessage = (messageId, reason, details = '') => call('report_community_group_message', { p_message_id: messageId, p_reason: reason, p_details: details });
+export const moderateCommunityGroupMessage = (messageId, action = 'delete', reason = '') => call('moderate_community_group_message', { p_message_id: messageId, p_action: action, p_reason: reason });
+export const moderateCommunityGroupMember = (groupId, userId, action = 'remove') => call('moderate_community_group_member', { p_group_id: groupId, p_user_id: userId, p_action: action });
+export const assignCommunityGroupModerator = (groupId, userId) => call('assign_community_group_moderator', { p_group_id: groupId, p_user_id: userId });
+export const removeCommunityGroupModerator = (groupId, userId) => call('remove_community_group_moderator', { p_group_id: groupId, p_user_id: userId });
