@@ -285,7 +285,7 @@ function CommunityContent() {
   };
 
   const removeMember = async member => {
-    if (!selectedGroup?.id || !member?.user_id || busy) return;
+    if (!selectedGroup?.id || !member?.user_id || member.user_id === currentUserId || busy) return;
     if (!window.confirm(`Remove @${member.username || 'this member'} from ${selectedGroup.name || 'this community'}?`)) return;
     setBusy(true);
     setError('');
@@ -342,12 +342,12 @@ function CommunityContent() {
         <aside className="community-members">
           <div className="panel-heading"><h2>Members</h2><span>{groupMembers.length}</span></div>
           {joined
-            ? groupMembers.slice(0, 50).map(member => <div className="member-row-wrap" key={member?.user_id || member?.username}>
+            ? groupMembers.map(member => <div className="member-row-wrap" key={member?.user_id || member?.username}>
               <button className="member-row" onClick={() => openProfile(member)} type="button">
                 <Avatar person={member} />
                 <div><strong>@{member?.username || 'member'}</strong>{member?.is_moderator && <span className="moderator-badge">Moderator</span>}<small>{member?.display_name || 'Favourit member'}</small></div>
               </button>
-              {isModerator && !member?.is_current_user && <button className="member-remove" onClick={() => removeMember(member)} disabled={busy} type="button">Remove</button>}
+              {isModerator && member?.user_id !== currentUserId && <button className="member-remove" onClick={() => removeMember(member)} disabled={busy} type="button">Remove</button>}
             </div>)
             : <div className="community-empty"><p>Join the community to see its members and chat.</p></div>}
         </aside>
