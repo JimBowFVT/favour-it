@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import './App.css';
 import './Prototype.css';
-import { categories, deals as seedDeals } from './data/deals';
+import { deals as seedDeals } from './data/deals';
 import { statusLabels } from './data/orders';
 import { getMyWallet, formatFav } from './lib/wallet';
 import { createOrderAndHoldFav, getMyOrders, releaseOrder, refundOrder } from './lib/orders';
@@ -12,6 +12,8 @@ import FavouritLoader from './components/FavouritLoader';
 import Community from './components/Community';
 import PremiumPage from './components/PremiumPage';
 import ExploreDealsPage from './components/ExploreDealsPage';
+import DealDetailPage from './components/DealDetailPage';
+import CreateDealPage from './components/CreateDealPage';
 
 const navItems = ['Home', 'Explore', 'Orders', 'Community', 'Upgrade'];
 
@@ -22,24 +24,13 @@ function initialsFor(name = 'Favourit seller') { return name.split(/\s+/).filter
 function Orders({ orders, onOpen, fav }) {
   return <section className="page-section">
     <div className="page-title"><div><div className="eyebrow">MY ORDERS</div><h1>Your work, <span>protected.</span></h1><p>Track every purchase from funded escrow to final delivery.</p></div><div className="wallet-mini"><small>AVAILABLE</small><strong>{formatFav(fav)} FAV</strong></div></div>
-    {orders.length ? <div className="orders-list">{orders.map(order => <button className="order-row" key={order.id} onClick={() => onOpen(order)}><div className="order-id">{String(order.id).slice(0, 8)}</div><div className="order-info"><strong>{order.title}</strong><span>{order.seller} · {order.category}</span></div><div className="order-amount"><strong>{formatFav(order.amount * 1000000)} FAV</strong><small>fee {formatFav(order.fee * 1000000)} FAV</small></div><span className={`status status-${order.status}`}>{statusLabels[order.status] || order.status}</span><span className="order-arrow">→</span></button>)}</div> : <div className="empty-state"><h2>No orders yet.</h2><p>Explore the marketplace and fund your first protected FAV order.</p></div>}
-    <div className="orders-info"><div><b>1</b><span>Payment secured in escrow</span></div><div><b>2</b><span>Seller delivers the work</span></div><div><b>3</b><span>You approve and release</span></div></div>
+    {orders.length ? <div className="orders-list">{orders.map(order => <button className="order-row" key={order.id} onClick={() => onOpen(order)}><div className="order-id">{String(order.id).slice(0, 8)}</div><div className="order-info"><strong>{order.title}</strong><span>{order.seller} · {order.packageTitle || order.category}</span></div><div className="order-amount"><strong>{formatFav(order.amount * 1000000)} FAV</strong><small>fee {formatFav(order.fee * 1000000)} FAV</small></div><span className={`status status-${order.status}`}>{statusLabels[order.status] || order.status}</span><span className="order-arrow">→</span></button>)}</div> : <div className="empty-state"><h2>No orders yet.</h2><p>Explore the marketplace and fund your first protected FAV order.</p></div>}
+    <div className="orders-info"><div><b>1</b><span>Payment secured in escrow</span></div><div><b>2</b><span>Seller delivers the package you selected</span></div><div><b>3</b><span>You approve and release</span></div></div>
   </section>;
 }
 
 function OrderDetail({ order, onBack, onRelease, onRefund, busy }) {
-  return <section className="page-section"><button className="back-button" onClick={onBack}>← Back to Orders</button><div className="order-detail"><div className="detail-description"><div className="eyebrow">ORDER {String(order.id).slice(0, 8)}</div><h1>{order.title}</h1><div className="seller detail-seller"><Avatar initials={initialsFor(order.seller)} large /><div><strong>{order.seller}</strong><small>{order.category} · Favourit seller</small></div></div><div className="timeline"><div className="timeline-item done"><b>Payment secured</b><span>FAV is held in escrow</span></div><div className={`timeline-item ${['in_progress', 'delivered', 'completed'].includes(order.status) ? 'done' : ''}`}><b>Work in progress</b><span>Seller is working on your order</span></div><div className={`timeline-item ${['delivered', 'completed'].includes(order.status) ? 'done' : ''}`}><b>Delivery</b><span>Review the seller's delivery</span></div><div className={`timeline-item ${order.status === 'completed' ? 'done' : ''}`}><b>Completed</b><span>FAV is released to the seller</span></div></div></div><aside className="buy-card order-side"><div className="eyebrow">ORDER STATUS</div><span className={`status status-${order.status}`}>{statusLabels[order.status] || order.status}</span><h2>{formatFav(order.amount * 1000000)} <em>FAV</em></h2><div className="order-breakdown"><span>Service <b>{formatFav(order.amount * 1000000)} FAV</b></span><span>Platform fee <b>{formatFav(order.fee * 1000000)} FAV</b></span><span>Total held <b>{formatFav(order.amount * 1000000)} FAV</b></span></div>{!['completed', 'cancelled'].includes(order.status) && <><button className="primary full" disabled={busy} onClick={onRelease}>{busy ? 'Processing…' : 'Approve & release FAV'}</button><button className="secondary full" disabled={busy} onClick={onRefund}>Request refund</button></>}<small className="escrow-note">◈ FAV remains protected until a release or approved refund.</small></aside></div></section>;
-}
-
-function DealDetail({ deal, onBack, onBuy, fav, busy, favorite, onFavorite }) {
-  if (!deal) return null;
-  return <section className="page-section"><button className="back-button" onClick={onBack}>← Back to Explore</button><div className="detail-layout"><div><div className="detail-art"><span>{deal.category}</span><strong>{deal.accent || initialsFor(deal.seller)}</strong></div><div className="detail-description"><div className="seller detail-seller"><Avatar initials={deal.accent || initialsFor(deal.seller)} large /><div><strong>{deal.seller}</strong><small>Favourit seller · ★ {deal.rating || 'New'} · {deal.reviews || 0} reviews</small></div><button className="favorite-detail" aria-pressed={favorite} onClick={() => onFavorite(deal.id)}>{favorite ? '♥ Liked' : '♡ Like deal'}</button></div><h1>{deal.title}</h1><p>{deal.description || 'Get a polished, reliable result from a Favourit freelancer. Everything is handled inside Favourit with protected payment and clear delivery expectations.'}</p><div className="detail-stats"><span>⚡ {deal.delivery} delivery</span><span>★ {deal.rating || 'New'} rating</span><span>◈ Escrow protected</span></div></div></div><aside className="buy-card"><div className="eyebrow">STANDARD PACKAGE</div><h2>{formatFav(deal.price * 1000000)} <em>FAV</em></h2><p>One complete delivery · protected payment</p><button className="primary full" disabled={busy} onClick={onBuy}>{busy ? 'Funding escrow…' : `Continue — ${formatFav(deal.price * 1000000)} FAV`}</button><div className="balance-note">Your balance: <strong>{formatFav(fav)} FAV</strong></div><hr /><div className="included"><span>✓ Payment held in escrow</span><span>✓ Secure messages</span><span>✓ Dispute protection</span></div></aside></div></section>;
-}
-
-function CreateDeal({ onBack, onCreated, busy }) {
-  const [form, setForm] = useState({ title: '', category: '', description: '', price: '', delivery: '3 days' });
-  const patch = (key, value) => setForm(current => ({ ...current, [key]: value }));
-  return <section className="page-section"><button className="back-button" onClick={onBack}>← Back</button><div className="form-header"><div className="eyebrow">CREATE A DEAL</div><h1>Turn your service into <span>FAV.</span></h1><p>Choose the closest approved service category, define exactly what the buyer receives and keep the work inside Favourit.</p></div><div className="form-card"><label>Deal title<input maxLength="120" value={form.title} onChange={event => patch('title', event.target.value)} placeholder="I will..." /></label><label>Service category<select value={form.category} onChange={event => patch('category', event.target.value)}><option value="">Select a category</option>{categories.map(category => <option key={category}>{category}</option>)}</select></label><label>Description<textarea maxLength="5000" value={form.description} onChange={event => patch('description', event.target.value)} rows="5" placeholder="Describe the scope, deliverable or session the buyer will receive..." /><small className="field-hint">{form.description.length}/5000</small></label><div className="form-two"><label>Price in FAV<input value={form.price} onChange={event => patch('price', event.target.value)} type="number" min="0.01" max="1000000000" step="0.01" placeholder="250" /></label><label>Delivery time<select value={form.delivery} onChange={event => patch('delivery', event.target.value)}><option>1 day</option><option>2 days</option><option>3 days</option><option>5 days</option><option>7 days</option><option>14 days</option><option>30 days</option></select></label></div><div className="upload-box">＋ <strong>Add attachments</strong><small>Secure file delivery will be connected through Favourit storage.</small></div><div className="form-actions"><button className="secondary" onClick={onBack}>Cancel</button><button className="primary" disabled={busy || !form.title.trim() || !form.category || form.description.trim().length < 10 || !form.price} onClick={() => onCreated(form)}>{busy ? 'Publishing…' : 'Publish deal →'}</button></div></div></section>;
+  return <section className="page-section"><button className="back-button" onClick={onBack}>← Back to Orders</button><div className="order-detail"><div className="detail-description"><div className="eyebrow">ORDER {String(order.id).slice(0, 8)}</div><h1>{order.title}</h1><div className="seller detail-seller"><Avatar initials={initialsFor(order.seller)} large /><div><strong>{order.seller}</strong><small>{order.category} · {order.packageTitle || 'Service package'}</small></div></div>{order.packageDescription && <p>{order.packageDescription}</p>}<div className="detail-stats"><span>Package: {order.packageTitle || order.packageTier}</span>{order.packageDeliveryDays && <span>⌁ {order.packageDeliveryDays} day{order.packageDeliveryDays === 1 ? '' : 's'}</span>}<span>↻ {order.packageRevisions ?? 0} revisions</span></div><div className="timeline"><div className="timeline-item done"><b>Payment secured</b><span>FAV is held in escrow</span></div><div className={`timeline-item ${['in_progress', 'delivered', 'completed'].includes(order.status) ? 'done' : ''}`}><b>Work in progress</b><span>Seller is working on the selected package</span></div><div className={`timeline-item ${['delivered', 'completed'].includes(order.status) ? 'done' : ''}`}><b>Delivery</b><span>Review the seller's delivery against the package scope</span></div><div className={`timeline-item ${order.status === 'completed' ? 'done' : ''}`}><b>Completed</b><span>FAV is released to the seller</span></div></div></div><aside className="buy-card order-side"><div className="eyebrow">ORDER STATUS</div><span className={`status status-${order.status}`}>{statusLabels[order.status] || order.status}</span><h2>{formatFav(order.amount * 1000000)} <em>FAV</em></h2><div className="order-breakdown"><span>{order.packageTitle || 'Service'} <b>{formatFav(order.amount * 1000000)} FAV</b></span><span>Platform fee <b>{formatFav(order.fee * 1000000)} FAV</b></span><span>Total held <b>{formatFav(order.amount * 1000000)} FAV</b></span></div>{!['completed', 'cancelled'].includes(order.status) && <><button className="primary full" disabled={busy} onClick={onRelease}>{busy ? 'Processing…' : 'Approve & release FAV'}</button><button className="secondary full" disabled={busy} onClick={onRefund}>Request refund</button></>}<small className="escrow-note">◈ The package snapshot is kept on the order so its scope stays clear.</small></aside></div></section>;
 }
 
 function Home({ fav, onExplore, onCreate, rewardMessage }) {
@@ -137,20 +128,20 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     }
   };
 
-  const buy = async () => {
+  const buy = async (packageTier = 'basic') => {
     if (!selectedDeal || busy) return;
     setBusy(true);
     try {
-      const order = await createOrderAndHoldFav(selectedDeal.id);
+      const order = await createOrderAndHoldFav(selectedDeal.id, packageTier);
       await refreshWallet();
       const freshOrders = await getMyOrders();
       setOrders(freshOrders);
-      const fresh = freshOrders.find(item => item.id === order?.id) || order;
+      const fresh = freshOrders.find(item => item.id === order?.id);
       if (!fresh) throw new Error('Order was funded but could not be loaded.');
       setSelectedDeal(null);
       setSelectedOrder(fresh);
       setActive('Orders');
-      notify(`Order funded — ${formatFav(fresh.amount * 1000000)} FAV moved to escrow.`);
+      notify(`${fresh.packageTitle || 'Package'} funded — ${formatFav(fresh.amount * 1000000)} FAV moved to escrow.`);
     } catch (error) {
       notify(error.message || 'Could not fund this order.');
     } finally { setBusy(false); }
@@ -191,7 +182,7 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     try {
       const deal = await createDealRemote(form);
       setDeals(current => [deal, ...current]);
-      notify('Deal published to the Favourit marketplace.');
+      notify('Deal published with protected packages.');
       go('Explore');
     } catch (error) {
       notify(error.message || 'Could not publish your deal.');
@@ -201,16 +192,18 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   const logout = async () => { try { await signOut(); } catch (error) { notify(error.message || 'Could not sign out.'); } };
 
   let content;
-  if (active === 'Home') content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} rewardMessage={rewardMessage} />;
+  if (selectedDeal) content = <DealDetailPage deal={selectedDeal} fav={fav} favorite={favorites.has(String(selectedDeal.id))} onFavorite={toggleFavorite} onBack={() => setSelectedDeal(null)} onBuy={buy} busy={busy} />;
+  else if (selectedOrder) content = <OrderDetail order={selectedOrder} onBack={() => setSelectedOrder(null)} onRelease={release} onRefund={refund} busy={busy} />;
+  else if (active === 'Home') content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} rewardMessage={rewardMessage} />;
   else if (active === 'Explore') content = <ExploreDealsPage query={query} setQuery={setQuery} onOpen={setSelectedDeal} onCreate={() => go('Create Deal')} deals={deals} favorites={favorites} onFavorite={toggleFavorite} />;
   else if (active === 'Orders') content = <Orders orders={orders} onOpen={setSelectedOrder} fav={fav} />;
   else if (active === 'Community') content = <Community />;
   else if (active === 'Upgrade') content = <PremiumPage fav={fav} />;
   else if (active === 'Profile') content = <Profile fav={fav} deals={deals} orders={orders} onCreate={() => go('Create Deal')} onOrders={() => go('Orders')} session={session} onSignOut={logout} usernameStatus={usernameStatus} />;
-  else if (active === 'Create Deal') content = <CreateDeal onBack={() => go('Explore')} onCreated={publish} busy={busy} />;
+  else if (active === 'Create Deal') content = <CreateDealPage onBack={() => go('Explore')} onCreated={publish} busy={busy} />;
   else content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} />;
 
-  return <div className="app-shell"><header className="topbar"><button className="brand-button" onClick={() => go('Home')}><Logo /></button><nav>{navItems.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => go(item)}>{item}</button>)}</nav><div className="top-actions"><div className="balance"><small>FAV</small><strong>{formatFav(fav)}</strong></div><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div></header><main>{loading ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>{selectedDeal && <DealDetail deal={selectedDeal} fav={fav} favorite={favorites.has(String(selectedDeal.id))} onFavorite={toggleFavorite} onBack={() => setSelectedDeal(null)} onBuy={buy} busy={busy} />} {selectedOrder && <OrderDetail order={selectedOrder} onBack={() => setSelectedOrder(null)} onRelease={release} onRefund={refund} busy={busy} />} {toast && <div className="toast" role="status">{toast}</div>}</div>;
+  return <div className="app-shell"><header className="topbar"><button className="brand-button" onClick={() => go('Home')}><Logo /></button><nav>{navItems.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => go(item)}>{item}</button>)}</nav><div className="top-actions"><div className="balance"><small>FAV</small><strong>{formatFav(fav)}</strong></div><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div></header><main>{loading ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>{toast && <div className="toast" role="status">{toast}</div>}</div>;
 }
 
 export default App;
