@@ -7,12 +7,12 @@ const normalizeOrder = (row) => {
   const snapshot = row.package_snapshot && typeof row.package_snapshot === 'object' ? row.package_snapshot : {};
   return {
     id: row.id,
-    title: row.title || 'Favourit order',
+    title: row.title || snapshot.deal_title || 'Favourit order',
     seller: row.seller_name || row.seller || 'Favourit seller',
     sellerId: row.seller_id,
     buyerId: row.buyer_id,
     dealId: row.deal_id,
-    category: row.category || 'Service',
+    category: row.category || snapshot.deal_category || 'Service',
     amount: Number(row.amount_fav || row.amount || 0) / MICRO_FAV,
     fee: Number(row.fee_fav || row.fee || 0) / MICRO_FAV,
     status: row.status,
@@ -21,6 +21,10 @@ const normalizeOrder = (row) => {
     packageDescription: snapshot.description || '',
     packageDeliveryDays: Number(snapshot.delivery_days || 0) || null,
     packageRevisions: Number(snapshot.revisions ?? 0),
+    serviceType: snapshot.service_type || 'deliverable',
+    dealDescription: snapshot.deal_description || '',
+    buyerRequirements: snapshot.buyer_requirements || '',
+    scopeCapturedAt: snapshot.captured_at || null,
     createdAt: row.created_at,
     updated: row.updated_at || row.created_at,
   };
@@ -78,8 +82,8 @@ export async function getMyOrders() {
 
   return rows.map(row => normalizeOrder({
     ...row,
-    title: row.deals?.title,
-    category: row.deals?.category,
+    title: row.deals?.title || row.package_snapshot?.deal_title,
+    category: row.deals?.category || row.package_snapshot?.deal_category,
     seller_name: profileMap[row.seller_id],
   }));
 }
