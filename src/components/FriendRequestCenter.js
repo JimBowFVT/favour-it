@@ -3,20 +3,19 @@ import { supabase } from '../lib/supabase';
 import { getMySocialGraph } from '../lib/social';
 import './FriendRequestCenter.css';
 
-function openRequester(toast) {
-  if (toast?.userId || toast?.username) {
-    window.dispatchEvent(new CustomEvent('favourit:open-profile', { detail: { userId: toast.userId || null, username: toast.username || null } }));
-    return;
-  }
-  window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
+function openCommunityRequests() {
   const communityNav = [...document.querySelectorAll('.topbar nav button')]
     .find(node => node.textContent?.trim() === 'Community');
+
   if (communityNav && !communityNav.classList.contains('active')) {
     communityNav.click();
     window.setTimeout(() => {
       window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
-    }, 80);
+    }, 100);
+    return;
   }
+
+  window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
 }
 
 export default function FriendRequestCenter() {
@@ -27,20 +26,20 @@ export default function FriendRequestCenter() {
   const refreshRequests = async (showNew = false) => {
     try {
       const graph = await getMySocialGraph();
-      const incoming = Array.isArray(graph?.incoming) ? graph.incoming : [];
+      const incoming = Array.isArray(graph?.incoming) ? graph.incoming.filter(Boolean) : [];
+
       if (showNew) {
         const newest = incoming.find(request => request?.id && !knownRequestIds.current.has(request.id));
         if (newest) {
           setToast({
             id: newest.id,
-            userId: newest.user_id || null,
-            username: newest.username || null,
             title: 'New friend request',
             body: `${newest.display_name || `@${newest.username || 'Someone'}`} sent you a friend request.`,
           });
         }
       }
-      knownRequestIds.current = new Set(incoming.map(request => request.id).filter(Boolean));
+
+      knownRequestIds.current = new Set(incoming.map(request => request?.id).filter(Boolean));
       window.dispatchEvent(new CustomEvent('favourit:friend-request-updated'));
     } catch (_) {}
   };
@@ -56,6 +55,7 @@ export default function FriendRequestCenter() {
         const { data } = await supabase.auth.getUser();
         const userId = data?.user?.id;
         if (!mounted || !userId) return;
+
         channel = supabase
           .channel(`friend-request-notifications-${userId}`)
           .on('postgres_changes', {
@@ -68,11 +68,8 @@ export default function FriendRequestCenter() {
             if (!row || row.user_id !== userId || row.type !== 'friend_request') return;
             if (seen.current.has(row.id)) return;
             seen.current.add(row.id);
-            const details = row.data || {};
             setToast({
               id: row.id,
-              userId: details.user_id || null,
-              username: details.username || null,
               title: row.title || 'New friend request',
               body: row.body || 'Someone sent you a friend request.',
             });
@@ -101,7 +98,7 @@ export default function FriendRequestCenter() {
   if (!toast) return null;
 
   return (
-    <button className="friend-request-toast" type="button" onClick={() => { openRequester(toast); setToast(null); }}>
+    <button className="friend-request-toast" type="button" onClick={() => { openCommunityRequests(); setToast(null); }}>
       <span className="friend-request-toast-avatar">♡</span>
       <span><strong>{toast.title}</strong><small>{toast.body}</small></span>
     </button>
