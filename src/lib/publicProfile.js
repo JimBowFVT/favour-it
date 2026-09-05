@@ -8,3 +8,4 @@ function call(name, args = {}) {
 export const getPublicProfile = userId => call('get_public_profile', { p_user_id: userId });
 export const getPublicProfileByUsername = username => call('get_public_profile_by_username', { p_username: username });
 export const getBlockedAccounts = () => call('get_blocked_accounts');
+export const reportUser = (userId, reason, details = '') => call('report_user', { p_user_id: userId, p_reason: reason, p_details: details });
