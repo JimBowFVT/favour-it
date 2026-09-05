@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import UsernameSection from './UsernameSection';
+import './UsernameManager.css';
 
 export default function UsernameManager({ status, onChanged }) {
   const [target, setTarget] = useState(null);
