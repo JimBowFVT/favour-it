@@ -13,6 +13,12 @@ export async function getMyFavoriteDealIds() {
   return new Set((data || []).map(row => row.deal_id));
 }
 
+export async function getMyFavoriteDeals() {
+  const { data, error } = await supabase.rpc('get_my_favorite_deals');
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
 export async function setFavorite(dealId, favorite) {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
