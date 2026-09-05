@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { assignCommunityGroupModerator, removeCommunityGroupModerator, listCommunityGroups, getCommunityGroupMembers } from '../lib/social';
 import './AdminPanel.css';
+import './AdminCommunityReports.css';
 
 const ADMIN_EMAIL = 'adamzoharlevi@gmail.com';
 
