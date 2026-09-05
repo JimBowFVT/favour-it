@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { hydrateMessageAttachments } from './messageMedia';
 
 function requireClient() { if (!supabase) throw new Error('Favourit backend is not configured yet.'); }
 function call(name, args = {}) { requireClient(); return supabase.rpc(name, args).then(({ data, error }) => { if (error) throw error; return data; }); }
@@ -14,10 +15,20 @@ export const unblockUser = userId => call('unblock_user', { p_user_id: userId })
 export const listCommunityGroups = () => call('list_public_community_groups');
 export const joinCommunityGroup = groupId => call('join_community_group', { p_group_id: groupId });
 export const leaveCommunityGroup = groupId => call('leave_community_group', { p_group_id: groupId });
-export const getCommunityGroupMessages = groupId => call('get_community_group_messages', { p_group_id: groupId });
-export const sendCommunityGroupMessage = (groupId, body, replyToMessageId = null) => replyToMessageId
-  ? call('send_community_group_message', { p_group_id: groupId, p_body: body, p_reply_to_message_id: replyToMessageId })
-  : call('send_community_group_message', { p_group_id: groupId, p_body: body });
+
+export async function getCommunityGroupMessages(groupId) {
+  const data = await call('get_community_group_messages', { p_group_id: groupId });
+  return hydrateMessageAttachments(Array.isArray(data) ? data : []);
+}
+
+export const sendCommunityGroupMessage = (groupId, body = '', replyToMessageId = null, assetIds = [], dealId = null) => call('send_community_group_message', {
+  p_group_id: groupId,
+  p_body: String(body || ''),
+  p_reply_to_message_id: replyToMessageId,
+  p_asset_ids: Array.isArray(assetIds) ? assetIds.filter(Boolean) : [],
+  p_deal_id: dealId || null,
+});
+
 export const deleteOwnCommunityGroupMessage = messageId => call('delete_own_community_group_message', { p_message_id: messageId });
 export const toggleCommunityGroupMessageStar = messageId => call('toggle_community_group_message_star', { p_message_id: messageId });
 export const getMyStarredCommunityMessages = () => call('get_my_starred_community_messages');
