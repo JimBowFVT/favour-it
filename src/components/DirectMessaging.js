@@ -493,8 +493,16 @@ export default function DirectMessaging({ session }) {
     setMenuId(null);
   };
 
+  const openReport = item => {
+    if (!item || item.sender_id === session.user.id) return;
+    setReportItem(item);
+    setReportCategory(REPORT_CATEGORIES[0]);
+    setReportDetails('');
+    setMenuId(null);
+  };
+
   const submitReport = async () => {
-    if (!reportItem || busy) return;
+    if (!reportItem || busy || reportItem.sender_id === session.user.id) return;
     setBusy(true);
     setError('');
     try {
@@ -511,7 +519,7 @@ export default function DirectMessaging({ session }) {
   };
 
   const forward = async target => {
-    if (!forwardItem || busy) return;
+    if (!forwardItem || forwardItem.is_deleted || busy) return;
     setBusy(true);
     setError('');
     try {
@@ -619,18 +627,22 @@ export default function DirectMessaging({ session }) {
             {messages.map(item => {
               const mine = item.sender_id === session.user.id;
               const canDelete = mine && !item.is_deleted && Date.now() - new Date(item.created_at).getTime() <= 15 * 60 * 1000;
+              const deletedReportOnly = Boolean(item.is_deleted && !mine);
+              const showActions = !item.is_deleted || deletedReportOnly;
               const sender = { user_id: item.sender_id, username: item.username, display_name: item.display_name, avatar_url: item.avatar_url };
               return <div className={`dm-message-row ${mine ? 'mine' : ''} ${item.is_deleted ? 'deleted' : ''}`} key={item.id} onTouchStart={event => onTouchStart(item, event)} onTouchEnd={event => onTouchEnd(item, event)}>
                 {!mine && <Avatar person={sender} />}
                 <div className="dm-message-wrap">
-                  <div className="dm-message-head">{!mine && <button onClick={() => openProfile(sender)} type="button">{item.display_name || `@${item.username || 'member'}`}</button>}<time>{formatTime(item.created_at)}</time>{item.is_starred && <span className="star-mark">★</span>}</div>
-                  {item.reply_to_message_id && <div className="dm-reply-preview">↩ @{item.reply_to_username || 'member'} · {item.reply_to_body || 'Message'}</div>}
-                  <div className="dm-message-line"><p>{item.body}</p>{!item.is_deleted && <><button className="dm-more" type="button" onClick={event => { event.stopPropagation(); setMenuId(value => value === item.id ? null : item.id); }}>•••</button>{menuId === item.id && <div className="dm-message-menu" onClick={event => event.stopPropagation()}>
-                    <button type="button" onClick={() => { setReplyTo(item); setMenuId(null); }}>Reply</button>
-                    <button type="button" onClick={() => { setForwardItem(item); setMenuId(null); }}>Forward</button>
-                    <button type="button" onClick={() => copyMessage(item)}>Copy</button>
-                    <button type="button" onClick={() => starMessage(item)}>{item.is_starred ? 'Unstar' : 'Star'}</button>
-                    {mine ? <button type="button" disabled={!canDelete} onClick={() => removeMessage(item)}>{canDelete ? 'Delete' : 'Delete expired'}</button> : <><button type="button" onClick={() => translate(item)}>Translate</button><button type="button" onClick={() => { setReportItem(item); setReportCategory(REPORT_CATEGORIES[0]); setReportDetails(''); setMenuId(null); }}>Report</button></>}
+                  <div className="dm-message-head">{!mine && <button onClick={() => openProfile(sender)} type="button">{item.display_name || `@${item.username || 'member'}`}</button>}<time>{formatTime(item.created_at)}</time>{!item.is_deleted && item.is_starred && <span className="star-mark">★</span>}</div>
+                  {!item.is_deleted && item.reply_to_message_id && <div className="dm-reply-preview">↩ @{item.reply_to_username || 'member'} · {item.reply_to_body || 'Message'}</div>}
+                  <div className="dm-message-line"><p>{item.body}</p>{showActions && <><button className="dm-more" type="button" aria-label={deletedReportOnly ? 'Report deleted message' : 'Message options'} onClick={event => { event.stopPropagation(); setMenuId(value => value === item.id ? null : item.id); }}>•••</button>{menuId === item.id && <div className="dm-message-menu" onClick={event => event.stopPropagation()}>
+                    {item.is_deleted ? <button type="button" onClick={() => openReport(item)}>Report</button> : <>
+                      <button type="button" onClick={() => { setReplyTo(item); setMenuId(null); }}>Reply</button>
+                      <button type="button" onClick={() => { setForwardItem(item); setMenuId(null); }}>Forward</button>
+                      <button type="button" onClick={() => copyMessage(item)}>Copy</button>
+                      <button type="button" onClick={() => starMessage(item)}>{item.is_starred ? 'Unstar' : 'Star'}</button>
+                      {mine ? <button type="button" disabled={!canDelete} onClick={() => removeMessage(item)}>{canDelete ? 'Delete' : 'Delete expired'}</button> : <><button type="button" onClick={() => translate(item)}>Translate</button><button type="button" onClick={() => openReport(item)}>Report</button></>}
+                    </>}
                   </div>}</>}
                   </div>
                 </div>
