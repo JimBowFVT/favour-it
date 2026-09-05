@@ -5,6 +5,7 @@ import FavouritLoader from './FavouritLoader';
 
 const AUTH_TIMEOUT_MS = 15000;
 const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
+const USERNAME_GATE_KEY = 'favourit_username_onboarding_gate_pending';
 function Logo() { return <div className="logo"><span>Favour</span><i>it</i></div>; }
 function withTimeout(promise, ms, message) { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
 function initialLanguage() { try { return normalizeLanguageCode(navigator.language || 'en'); } catch (_) { return 'en'; } }
@@ -37,7 +38,9 @@ export default function AuthGate() {
       if (mode === 'signup') {
         window.localStorage.setItem('favourit_language', selectedLanguage);
         window.localStorage.setItem('favourit:language', selectedLanguage);
-        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() }));
+        const onboarding = JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() });
+        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, onboarding);
+        window.localStorage.setItem(USERNAME_GATE_KEY, onboarding);
         if (!result.data?.session) {
           setMessage('Account created. Check your email to confirm your account, then sign in.');
           setMode('login');
