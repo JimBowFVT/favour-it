@@ -74,7 +74,7 @@ export default function UsernameSection({ status: initialStatus = null, compact 
     </div>
     <form onSubmit={submit}>
       <label className="username-inline-input"><span>@</span><input value={username} onChange={event => setUsername(event.target.value)} maxLength={20} disabled={!canChange || busy} aria-label="Favourit username" /></label>
-      {canChange && <div className="username-inline-suggestions"><div><small>Suggestions</small><button type="button" onClick={roll} disabled={busy}>↻ New</button></div>{suggestions.slice(0, 4).map(item => <button type="button" key={item} onClick={() => setUsername(item)} disabled={busy}>@{item}</button>)}</div>}
+      {canChange && <div className="username-inline-suggestions"><div><small>✨ Suggestions for you</small><button type="button" onClick={roll} disabled={busy} aria-label="Generate new username suggestions">🎲 Roll</button></div>{suggestions.map(item => <button type="button" key={item} onClick={() => setUsername(item)} disabled={busy}>@{item}</button>)}</div>}
       {error && <div className="username-inline-error">{error}</div>}
       {saved && <div className="username-inline-success">✓ {saved}</div>}
       <button className="primary" disabled={!canChange || busy || normalized.length < 3 || normalized === status.username}>{busy ? 'Saving…' : 'Save new @'}</button>
