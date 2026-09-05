@@ -3,35 +3,409 @@ import { getMySocialGraph, searchCommunityPeople, sendFriendRequest, respondFrie
 import { supabase } from '../lib/supabase';
 import './Community.css';
 
-const GROUP_ICONS={designers:'✦',developers:'⌘','video-editors':'▣',musicians:'♫',marketers:'↗',photographers:'◉',writers:'✎',entrepreneurs:'◇'};
-function initials(name='Favourit member'){return name.split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'FV'}
-function Avatar({person,large=false,onClick}){const content=person?.avatar_url?<img className={`community-avatar ${large?'large':''}`} src={person.avatar_url} alt=""/>:<div className={`community-avatar ${large?'large':''}`}>{initials(person?.display_name||person?.username)}</div>;return onClick?<button className="community-avatar-button" onClick={onClick} aria-label={`Open @${person?.username||'member'} profile`}>{content}</button>:content}
-const openProfile=person=>{const id=person?.id||person?.user_id;if(id)window.dispatchEvent(new CustomEvent('favourit:open-profile',{detail:{userId:id}}));};
-const openMessage=person=>{if(person?.username)window.dispatchEvent(new CustomEvent('favourit:open-direct-message',{detail:{username:person.username}}));};
-function PersonCard({person,status,onConnect,onCancel,onRemove}){return <article className="community-person-card"><Avatar person={person} large onClick={()=>openProfile(person)}/><div className="community-person-copy"><button className="community-person-name" onClick={()=>openProfile(person)}>{person.display_name||person.username||'Favourit member'}</button><button className="community-person-handle" onClick={()=>openProfile(person)}>@{person.username||'member'}</button><p>{person.bio||'Favourit member · Open to new collaborations.'}</p></div><div className="community-person-actions">{status==='friends'&&<><span className="community-status success">Friends ✓</span><button className="secondary small" onClick={()=>openMessage(person)}>Message</button>{onRemove&&<button className="text-button small" onClick={onRemove}>Remove friend</button></>}{status==='incoming'&&<><button className="primary small" onClick={()=>onConnect('accept')}>Accept</button><button className="secondary small" onClick={()=>onConnect('reject')}>Decline</button></>}{status==='outgoing'&&<button className="secondary small" onClick={onCancel}>Pending</button>}{!status&&<><button className="primary small" onClick={()=>onConnect()}>Connect</button><button className="secondary small" onClick={()=>openMessage(person)}>Message</button></>}</div></article>}
-function GroupCard({group,onOpen,onToggle}){return <article className="community-group-card"><div className="group-icon">{GROUP_ICONS[group.slug]||'◇'}</div><div className="group-card-main"><div className="group-card-title"><h3>{group.name}</h3><span>Public</span></div><p>{group.description}</p><small>{Number(group.member_count||0).toLocaleString()} members</small></div><div className="group-card-actions"><button className={group.is_joined?'secondary small':'primary small'} onClick={()=>onToggle(group)}>{group.is_joined?'Joined ✓':'Join'}</button><button className="text-button" onClick={()=>onOpen(group)}>Chat →</button></div></article>}
+const GROUP_ICONS = { designers: '✦', developers: '⌘', 'video-editors': '▣', musicians: '♫', marketers: '↗', photographers: '◉', writers: '✎', entrepreneurs: '◇' };
 
-export default function Community(){
- const[tab,setTab]=useState('discover'),[people,setPeople]=useState([]),[graph,setGraph]=useState({friends:[],incoming:[],outgoing:[],blocked:[]}),[groups,setGroups]=useState([]),[selectedGroup,setSelectedGroup]=useState(null),[groupMessages,setGroupMessages]=useState([]),[groupMembers,setGroupMembers]=useState([]),[search,setSearch]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[currentUserId,setCurrentUserId]=useState('');
- const refreshSocial=async()=>{const data=await getMySocialGraph();setGraph({friends:data?.friends||[],incoming:data?.incoming||[],outgoing:data?.outgoing||[],blocked:data?.blocked||[]});};
- const refreshGroups=async()=>{const data=await listCommunityGroups();setGroups(Array.isArray(data)?data:[]);};
- useEffect(()=>{Promise.all([refreshSocial(),refreshGroups(),supabase?.auth?.getUser().then(({data})=>setCurrentUserId(data?.user?.id||'')).catch(()=>{})]).catch(e=>setError(e.message||'Could not load Community.'));},[]);
- useEffect(()=>{const timer=setTimeout(async()=>{try{setPeople(await searchCommunityPeople(search.trim()));}catch(e){setError(e.message||'Could not search people.');}},250);return()=>clearTimeout(timer);},[search]);
- useEffect(()=>{if(!selectedGroup)return;const joined=groups.find(g=>g.id===selectedGroup.id)?.is_joined;if(!joined)return;const refresh=async()=>{try{setGroupMessages(await getCommunityGroupMessages(selectedGroup.id));}catch(e){setError(e.message||'Could not refresh group chat.');}};const timer=setInterval(refresh,2000);return()=>clearInterval(timer);},[selectedGroup,groups]);
- const statusFor=id=>graph.friends.some(p=>p.id===id||p.user_id===id)?'friends':graph.incoming.some(p=>p.user_id===id)?'incoming':graph.outgoing.some(p=>p.user_id===id)?'outgoing':'';
- const discoverPeople=useMemo(()=>people.slice(0,6),[people]);
- const action=async fn=>{setBusy(true);setError('');try{await fn();await refreshSocial();}catch(e){setError(e.message||'Something went wrong.');}finally{setBusy(false);}};
- const openGroup=async group=>{setSelectedGroup(group);setError('');setBusy(true);try{const[messages,members]=group.is_joined?await Promise.all([getCommunityGroupMessages(group.id),getCommunityGroupMembers(group.id)]):[[],[]];setGroupMessages(messages||[]);setGroupMembers(members||[]);}catch(e){setError(e.message||'Could not open group.');}finally{setBusy(false);}};
- const toggleGroup=async group=>{setBusy(true);setError('');try{if(group.is_joined)await leaveCommunityGroup(group.id);else await joinCommunityGroup(group.id);await refreshGroups();if(!group.is_joined){const[members,messages]=await Promise.all([getCommunityGroupMembers(group.id),getCommunityGroupMessages(group.id)]);setGroupMembers(members||[]);setGroupMessages(messages||[]);}else{setGroupMessages([]);setGroupMembers([]);}}catch(e){setError(e.message||'Could not update group membership.');}finally{setBusy(false);}};
- const postToGroup=async e=>{e.preventDefault();if(!selectedGroup||!message.trim()||busy)return;setBusy(true);setError('');try{await sendCommunityGroupMessage(selectedGroup.id,message.trim());setMessage('');setGroupMessages(await getCommunityGroupMessages(selectedGroup.id));}catch(e){setError(e.message||'Could not send message.');}finally{setBusy(false);}};
- const reportMessage=async item=>{const reason=window.prompt('Why are you reporting this message?');if(!reason?.trim())return;const details=window.prompt('Optional details:')||'';setBusy(true);setError('');try{await reportCommunityGroupMessage(item.id,reason.trim(),details.trim());window.alert('Report submitted. A moderator will review it.');}catch(e){setError(e.message||'Could not report message.');}finally{setBusy(false);}};
- const deleteMessage=async item=>{if(!window.confirm('Remove this message from the community chat?'))return;setBusy(true);setError('');try{await moderateCommunityGroupMessage(item.id,'delete','Removed by community moderation.');setGroupMessages(await getCommunityGroupMessages(selectedGroup.id));}catch(e){setError(e.message||'Could not moderate message.');}finally{setBusy(false);}};
- const removeMember=async member=>{if(!window.confirm(`Remove @${member.username||'this member'} from the group?`))return;setBusy(true);setError('');try{await moderateCommunityGroupMember(selectedGroup.id,member.user_id,'remove');const[members,messages]=await Promise.all([getCommunityGroupMembers(selectedGroup.id),getCommunityGroupMessages(selectedGroup.id)]);setGroupMembers(members||[]);setGroupMessages(messages||[]);await refreshGroups();}catch(e){setError(e.message||'Could not remove member.');}finally{setBusy(false);}};
- if(selectedGroup){const joined=groups.find(g=>g.id===selectedGroup.id)?.is_joined;const me=groupMembers.find(member=>member.user_id===currentUserId);const isModerator=Boolean(me?.is_moderator);return <section className="page-section community-page"><button className="back-button" onClick={()=>{setSelectedGroup(null);setGroupMessages([]);setGroupMembers([]);}}>← Back to Community</button><div className="community-group-hero"><div className="group-icon hero">{GROUP_ICONS[selectedGroup.slug]||'◇'}</div><div><div className="eyebrow">PUBLIC COMMUNITY</div><h1>{selectedGroup.name}</h1><p>{selectedGroup.description}</p><span className="group-meta">{Number(selectedGroup.member_count||0).toLocaleString()} members · Public</span></div><button className={joined?'secondary':'primary'} onClick={()=>toggleGroup(selectedGroup)}>{joined?'Leave group':'Join group'}</button></div>{error&&<div className="community-error">{error}</div>}<div className="community-chat-layout"><div className="community-group-chat"><div className="group-chat-header"><div><strong>Community chat</strong><span>Member-only group conversation · no typing indicators or presence.</span></div><span className="moderated-pill">Moderated</span></div><div className="group-chat-messages">{joined?(groupMessages.length?groupMessages.map(item=><div className={`group-message ${item.is_deleted?'deleted':''}`} key={item.id}><Avatar person={item} onClick={()=>openProfile(item)}/><div className="group-message-body"><div className="group-message-head"><button className="group-message-user" onClick={()=>openProfile(item)}>{item.display_name||item.username||'Member'}</button><button className="group-message-handle" onClick={()=>openProfile(item)}>@{item.username||'member'}</button>{item.is_moderator&&<span className="moderator-badge">Moderator</span>}<time>{new Date(item.created_at).toLocaleString([],{hour:'2-digit',minute:'2-digit'})}</time></div><p>{item.body}</p>{!item.is_deleted&&<div className="group-message-actions"><button className="group-message-action" onClick={()=>reportMessage(item)} disabled={busy}>Report</button>{isModerator&&item.user_id!==currentUserId&&<button className="group-message-action danger" onClick={()=>deleteMessage(item)} disabled={busy}>Remove</button>}</div>}</div></div>):<div className="community-empty"><h2>No messages yet.</h2><p>Be the first person to start the conversation.</p></div>):<div className="community-empty"><h2>Join the community first.</h2><p>This group chat is available to members. Join the group to participate.</p><button className="primary" onClick={()=>toggleGroup(selectedGroup)}>Join {selectedGroup.name}</button></div>}</div>{joined&&<form className="group-chat-composer" onSubmit={postToGroup}><input value={message} maxLength={2000} onChange={e=>setMessage(e.target.value)} placeholder="Share something with the group…"/><button className="primary" disabled={!message.trim()||busy}>Send</button></form>}</div><aside className="community-members"><div className="panel-heading"><h2>Members</h2><span>{groupMembers.length}</span></div>{groupMembers.slice(0,12).map(member=><div className="member-row-wrap" key={member.user_id}><button className="member-row" onClick={()=>openProfile(member)}><Avatar person={member}/><div><strong>@{member.username||'member'}</strong>{member.is_moderator&&<span className="moderator-badge">Moderator</span>}<small>{member.display_name||'Favourit member'}</small></div></button>{isModerator&&member.user_id!==currentUserId&&<button className="member-remove" onClick={()=>removeMember(member)} disabled={busy}>Remove</button>}</div>)}{groupMembers.length>12&&<small className="members-more">+ {groupMembers.length-12} more members</small>}</aside></div></section>}
- return <section className="page-section community-page"><div className="page-title community-title"><div><div className="eyebrow">COMMUNITY</div><h1>People make <span>Favourit.</span></h1><p>Find people to work with, build trusted connections and join communities around your skills.</p></div><button className="secondary" onClick={()=>setTab('friends')}>Your network · {graph.friends.length}</button></div><div className="community-tabs"><button className={tab==='discover'?'active':''} onClick={()=>setTab('discover')}>Discover</button><button className={tab==='friends'?'active':''} onClick={()=>setTab('friends')}>Friends <span>{graph.friends.length}</span></button><button className={tab==='groups'?'active':''} onClick={()=>setTab('groups')}>Groups <span>{groups.length}</span></button><button className={tab==='requests'?'active':''} onClick={()=>setTab('requests')}>Requests {graph.incoming.length>0&&<span className="count-badge">{graph.incoming.length}</span>}</button></div>{error&&<div className="community-error">{error}</div>}
- {tab==='discover'&&<><div className="community-search"><span>⌕</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search people by @username, name or skill…"/></div><div className="community-section-heading"><div><div className="eyebrow">NETWORK</div><h2>{search?'People matching your search':'People you may want to work with'}</h2></div><span>{discoverPeople.length} people</span></div>{discoverPeople.length?<div className="people-grid">{discoverPeople.map(person=><PersonCard key={person.id||person.user_id} person={person} status={statusFor(person.id||person.user_id)} onConnect={value=>action(async()=>{if(value==='accept'||value==='reject'){const request=graph.incoming.find(item=>item.user_id===(person.id||person.user_id));if(request)await respondFriendRequest(request.id,value);}else await sendFriendRequest(person.id||person.user_id);})} onCancel={()=>action(async()=>{const request=graph.outgoing.find(item=>item.user_id===(person.id||person.user_id));if(request)await cancelFriendRequest(request.id);})}/>)}</div>:<div className="community-empty"><h2>{search?'No people found.':'No discoverable members yet.'}</h2><p>{search?'Try another name, @username or skill.':'As more members join Favourit, we will surface people who may be a good fit to work with.'}</p></div>}<div className="community-section-heading group-heading"><div><div className="eyebrow">COMMUNITIES</div><h2>Groups you can join</h2></div><button className="text-button" onClick={()=>setTab('groups')}>View all →</button></div><div className="groups-grid">{groups.slice(0,6).map(group=><GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup}/>)}</div></>}
- {tab==='friends'&&<div className="community-panel-grid"><div className="community-panel wide"><div className="panel-heading"><div><div className="eyebrow">YOUR NETWORK</div><h2>Friends</h2></div><span>{graph.friends.length}</span></div>{graph.friends.length?graph.friends.map(person=><PersonCard key={person.id||person.user_id} person={person} status="friends" onRemove={()=>action(()=>removeFriend(person.id||person.user_id))}/>):<div className="community-empty"><h2>No friends yet.</h2><p>Discover people you may want to work with and send your first connection request.</p><button className="primary" onClick={()=>setTab('discover')}>Discover people</button></div>}</div></div>}
- {tab==='groups'&&<><div className="community-section-heading"><div><div className="eyebrow">SKILL COMMUNITIES</div><h2>Find your people</h2></div><span>{groups.length} public groups</span></div><div className="groups-grid full">{groups.map(group=><GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup}/>)}</div></>}
- {tab==='requests'&&<div className="community-panel-grid"><div className="community-panel wide"><div className="panel-heading"><div><div className="eyebrow">CONNECTIONS</div><h2>Friend requests</h2></div><span>{graph.incoming.length}</span></div>{graph.incoming.length?graph.incoming.map(request=><PersonCard key={request.id} person={request} status="incoming" onConnect={value=>action(()=>respondFriendRequest(request.id,value))}/>):<div className="community-empty"><h2>No pending requests.</h2><p>When someone wants to connect with you, their request will appear here.</p></div>}{graph.outgoing.length>0&&<div className="outgoing-requests"><h3>Sent requests</h3>{graph.outgoing.map(request=><div className="outgoing-row" key={request.id}><Avatar person={request} onClick={()=>openProfile(request)}/><button className="outgoing-user" onClick={()=>openProfile(request)}>@{request.username||'member'}</button><button className="secondary small" onClick={()=>action(()=>cancelFriendRequest(request.id))}>Cancel</button></div>)}</div>}</div></div>}
- </section>;
+function initials(name = 'Favourit member') {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase() || 'FV';
+}
+
+function Avatar({ person, large = false, onClick }) {
+  const content = person?.avatar_url ? (
+    <img className={`community-avatar ${large ? 'large' : ''}`} src={person.avatar_url} alt="" />
+  ) : (
+    <div className={`community-avatar ${large ? 'large' : ''}`}>{initials(person?.display_name || person?.username)}</div>
+  );
+  if (!onClick) return content;
+  return <button className="community-avatar-button" onClick={onClick} aria-label={`Open @${person?.username || 'member'} profile`} type="button">{content}</button>;
+}
+
+const openProfile = (person) => {
+  const id = person?.id || person?.user_id;
+  if (id) window.dispatchEvent(new CustomEvent('favourit:open-profile', { detail: { userId: id } }));
+};
+
+const openMessage = (person) => {
+  if (person?.username) window.dispatchEvent(new CustomEvent('favourit:open-direct-message', { detail: { username: person.username } }));
+};
+
+function PersonCard({ person, status, onConnect, onCancel, onRemove }) {
+  return (
+    <article className="community-person-card">
+      <Avatar person={person} large onClick={() => openProfile(person)} />
+      <div className="community-person-copy">
+        <button className="community-person-name" onClick={() => openProfile(person)} type="button">{person.display_name || person.username || 'Favourit member'}</button>
+        <button className="community-person-handle" onClick={() => openProfile(person)} type="button">@{person.username || 'member'}</button>
+        <p>{person.bio || 'Favourit member · Open to new collaborations.'}</p>
+      </div>
+      <div className="community-person-actions">
+        {status === 'friends' && (
+          <>
+            <span className="community-status success">Friends ✓</span>
+            <button className="secondary small" onClick={() => openMessage(person)} type="button">Message</button>
+            {onRemove && <button className="text-button small" onClick={onRemove} type="button">Remove friend</button>}
+          </>
+        )}
+        {status === 'incoming' && (
+          <>
+            <button className="primary small" onClick={() => onConnect('accept')} type="button">Accept</button>
+            <button className="secondary small" onClick={() => onConnect('reject')} type="button">Decline</button>
+          </>
+        )}
+        {status === 'outgoing' && <button className="secondary small" onClick={onCancel} type="button">Pending</button>}
+        {!status && (
+          <>
+            <button className="primary small" onClick={() => onConnect()} type="button">Connect</button>
+            <button className="secondary small" onClick={() => openMessage(person)} type="button">Message</button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function GroupCard({ group, onOpen, onToggle }) {
+  return (
+    <article className="community-group-card">
+      <div className="group-icon">{GROUP_ICONS[group.slug] || '◇'}</div>
+      <div className="group-card-main">
+        <div className="group-card-title"><h3>{group.name}</h3><span>Public</span></div>
+        <p>{group.description}</p>
+        <small>{Number(group.member_count || 0).toLocaleString()} members</small>
+      </div>
+      <div className="group-card-actions">
+        <button className={group.is_joined ? 'secondary small' : 'primary small'} onClick={() => onToggle(group)} type="button">{group.is_joined ? 'Joined ✓' : 'Join'}</button>
+        <button className="text-button" onClick={() => onOpen(group)} type="button">Chat →</button>
+      </div>
+    </article>
+  );
+}
+
+export default function Community() {
+  const [tab, setTab] = useState('discover');
+  const [people, setPeople] = useState([]);
+  const [graph, setGraph] = useState({ friends: [], incoming: [], outgoing: [], blocked: [] });
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
+
+  const refreshSocial = async () => {
+    const data = await getMySocialGraph();
+    setGraph({ friends: data?.friends || [], incoming: data?.incoming || [], outgoing: data?.outgoing || [], blocked: data?.blocked || [] });
+  };
+
+  const refreshGroups = async () => {
+    const data = await listCommunityGroups();
+    setGroups(Array.isArray(data) ? data : []);
+  };
+
+  useEffect(() => {
+    Promise.all([
+      refreshSocial(),
+      refreshGroups(),
+      supabase?.auth?.getUser().then(({ data }) => setCurrentUserId(data?.user?.id || '')).catch(() => {}),
+    ]).catch((e) => setError(e.message || 'Could not load Community.'));
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try { setPeople(await searchCommunityPeople(search.trim())); }
+      catch (e) { setError(e.message || 'Could not search people.'); }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const joined = groups.find((g) => g.id === selectedGroup.id)?.is_joined;
+    if (!joined) return;
+    const refresh = async () => {
+      try { setGroupMessages(await getCommunityGroupMessages(selectedGroup.id)); }
+      catch (e) { setError(e.message || 'Could not refresh group chat.'); }
+    };
+    const timer = setInterval(refresh, 2000);
+    return () => clearInterval(timer);
+  }, [selectedGroup, groups]);
+
+  const statusFor = (id) => {
+    if (graph.friends.some((p) => p.id === id || p.user_id === id)) return 'friends';
+    if (graph.incoming.some((p) => p.user_id === id)) return 'incoming';
+    if (graph.outgoing.some((p) => p.user_id === id)) return 'outgoing';
+    return '';
+  };
+
+  const discoverPeople = useMemo(() => people.slice(0, 6), [people]);
+
+  const action = async (fn) => {
+    setBusy(true); setError('');
+    try { await fn(); await refreshSocial(); }
+    catch (e) { setError(e.message || 'Something went wrong.'); }
+    finally { setBusy(false); }
+  };
+
+  const openGroup = async (group) => {
+    setSelectedGroup(group); setError(''); setBusy(true);
+    try {
+      const [messages, members] = group.is_joined ? await Promise.all([getCommunityGroupMessages(group.id), getCommunityGroupMembers(group.id)]) : [[], []];
+      setGroupMessages(messages || []); setGroupMembers(members || []);
+    } catch (e) { setError(e.message || 'Could not open group.'); }
+    finally { setBusy(false); }
+  };
+
+  const toggleGroup = async (group) => {
+    setBusy(true); setError('');
+    try {
+      if (group.is_joined) await leaveCommunityGroup(group.id); else await joinCommunityGroup(group.id);
+      await refreshGroups();
+      if (!group.is_joined) {
+        const [members, messages] = await Promise.all([getCommunityGroupMembers(group.id), getCommunityGroupMessages(group.id)]);
+        setGroupMembers(members || []); setGroupMessages(messages || []);
+      } else {
+        setGroupMessages([]); setGroupMembers([]);
+      }
+    } catch (e) { setError(e.message || 'Could not update group membership.'); }
+    finally { setBusy(false); }
+  };
+
+  const postToGroup = async (e) => {
+    e.preventDefault();
+    if (!selectedGroup || !message.trim() || busy) return;
+    setBusy(true); setError('');
+    try {
+      await sendCommunityGroupMessage(selectedGroup.id, message.trim());
+      setMessage(''); setGroupMessages(await getCommunityGroupMessages(selectedGroup.id));
+    } catch (e) { setError(e.message || 'Could not send message.'); }
+    finally { setBusy(false); }
+  };
+
+  const reportMessage = async (item) => {
+    const reason = window.prompt('Why are you reporting this message?');
+    if (!reason?.trim()) return;
+    const details = window.prompt('Optional details:') || '';
+    setBusy(true); setError('');
+    try {
+      await reportCommunityGroupMessage(item.id, reason.trim(), details.trim());
+      window.alert('Report submitted. A moderator will review it.');
+    } catch (e) { setError(e.message || 'Could not report message.'); }
+    finally { setBusy(false); }
+  };
+
+  const deleteMessage = async (item) => {
+    if (!window.confirm('Remove this message from the community chat?')) return;
+    setBusy(true); setError('');
+    try {
+      await moderateCommunityGroupMessage(item.id, 'delete', 'Removed by community moderation.');
+      setGroupMessages(await getCommunityGroupMessages(selectedGroup.id));
+    } catch (e) { setError(e.message || 'Could not moderate message.'); }
+    finally { setBusy(false); }
+  };
+
+  const removeMember = async (member) => {
+    if (!window.confirm(`Remove @${member.username || 'this member'} from the group?`)) return;
+    setBusy(true); setError('');
+    try {
+      await moderateCommunityGroupMember(selectedGroup.id, member.user_id, 'remove');
+      const [members, messages] = await Promise.all([getCommunityGroupMembers(selectedGroup.id), getCommunityGroupMessages(selectedGroup.id)]);
+      setGroupMembers(members || []); setGroupMessages(messages || []); await refreshGroups();
+    } catch (e) { setError(e.message || 'Could not remove member.'); }
+    finally { setBusy(false); }
+  };
+
+  if (selectedGroup) {
+    const joined = groups.find((g) => g.id === selectedGroup.id)?.is_joined;
+    const me = groupMembers.find((member) => member.user_id === currentUserId);
+    const isModerator = Boolean(me?.is_moderator);
+
+    return (
+      <section className="page-section community-page">
+        <button className="back-button" onClick={() => { setSelectedGroup(null); setGroupMessages([]); setGroupMembers([]); }} type="button">← Back to Community</button>
+        <div className="community-group-hero">
+          <div className="group-icon hero">{GROUP_ICONS[selectedGroup.slug] || '◇'}</div>
+          <div>
+            <div className="eyebrow">PUBLIC COMMUNITY</div>
+            <h1>{selectedGroup.name}</h1>
+            <p>{selectedGroup.description}</p>
+            <span className="group-meta">{Number(selectedGroup.member_count || 0).toLocaleString()} members · Public</span>
+          </div>
+          <button className={joined ? 'secondary' : 'primary'} onClick={() => toggleGroup(selectedGroup)} type="button">{joined ? 'Leave group' : 'Join group'}</button>
+        </div>
+        {error && <div className="community-error">{error}</div>}
+
+        <div className="community-chat-layout">
+          <div className="community-group-chat">
+            <div className="group-chat-header">
+              <div><strong>Community chat</strong><span>Member-only group conversation · no typing indicators or presence.</span></div>
+              <span className="moderated-pill">Moderated</span>
+            </div>
+            <div className="group-chat-messages">
+              {joined ? (
+                groupMessages.length ? groupMessages.map((item) => (
+                  <div className={`group-message ${item.is_deleted ? 'deleted' : ''}`} key={item.id}>
+                    <Avatar person={item} onClick={() => openProfile(item)} />
+                    <div className="group-message-body">
+                      <div className="group-message-head">
+                        <button className="group-message-user" onClick={() => openProfile(item)} type="button">{item.display_name || item.username || 'Member'}</button>
+                        <button className="group-message-handle" onClick={() => openProfile(item)} type="button">@{item.username || 'member'}</button>
+                        {item.is_moderator && <span className="moderator-badge">Moderator</span>}
+                        <time>{new Date(item.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit' })}</time>
+                      </div>
+                      <p>{item.body}</p>
+                      {!item.is_deleted && (
+                        <div className="group-message-actions">
+                          <button className="group-message-action" onClick={() => reportMessage(item)} disabled={busy} type="button">Report</button>
+                          {isModerator && item.user_id !== currentUserId && <button className="group-message-action danger" onClick={() => deleteMessage(item)} disabled={busy} type="button">Remove</button>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="community-empty"><h2>No messages yet.</h2><p>Be the first person to start the conversation.</p></div>
+                )
+              ) : (
+                <div className="community-empty">
+                  <h2>Join the community first.</h2>
+                  <p>This group chat is available to members. Join the group to participate.</p>
+                  <button className="primary" onClick={() => toggleGroup(selectedGroup)} type="button">Join {selectedGroup.name}</button>
+                </div>
+              )}
+            </div>
+            {joined && (
+              <form className="group-chat-composer" onSubmit={postToGroup}>
+                <input value={message} maxLength={2000} onChange={(e) => setMessage(e.target.value)} placeholder="Share something with the group…" />
+                <button className="primary" disabled={!message.trim() || busy} type="submit">Send</button>
+              </form>
+            )}
+          </div>
+
+          <aside className="community-members">
+            <div className="panel-heading"><h2>Members</h2><span>{groupMembers.length}</span></div>
+            {groupMembers.slice(0, 12).map((member) => (
+              <div className="member-row-wrap" key={member.user_id}>
+                <button className="member-row" onClick={() => openProfile(member)} type="button">
+                  <Avatar person={member} />
+                  <div><strong>@{member.username || 'member'}</strong>{member.is_moderator && <span className="moderator-badge">Moderator</span>}<small>{member.display_name || 'Favourit member'}</small></div>
+                </button>
+                {isModerator && member.user_id !== currentUserId && <button className="member-remove" onClick={() => removeMember(member)} disabled={busy} type="button">Remove</button>}
+              </div>
+            ))}
+            {groupMembers.length > 12 && <small className="members-more">+ {groupMembers.length - 12} more members</small>}
+          </aside>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="page-section community-page">
+      <div className="page-title community-title">
+        <div>
+          <div className="eyebrow">COMMUNITY</div>
+          <h1>People make <span>Favourit.</span></h1>
+          <p>Find people to work with, build trusted connections and join communities around your skills.</p>
+        </div>
+        <button className="secondary" onClick={() => setTab('friends')} type="button">Your network · {graph.friends.length}</button>
+      </div>
+
+      <div className="community-tabs">
+        <button className={tab === 'discover' ? 'active' : ''} onClick={() => setTab('discover')} type="button">Discover</button>
+        <button className={tab === 'friends' ? 'active' : ''} onClick={() => setTab('friends')} type="button">Friends <span>{graph.friends.length}</span></button>
+        <button className={tab === 'groups' ? 'active' : ''} onClick={() => setTab('groups')} type="button">Groups <span>{groups.length}</span></button>
+        <button className={tab === 'requests' ? 'active' : ''} onClick={() => setTab('requests')} type="button">Requests {graph.incoming.length > 0 && <span className="count-badge">{graph.incoming.length}</span>}</button>
+      </div>
+
+      {error && <div className="community-error">{error}</div>}
+
+      {tab === 'discover' && (
+        <>
+          <div className="community-search"><span>⌕</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people by @username, name or skill…" /></div>
+          <div className="community-section-heading">
+            <div><div className="eyebrow">NETWORK</div><h2>{search ? 'People matching your search' : 'People you may want to work with'}</h2></div>
+            <span>{discoverPeople.length} people</span>
+          </div>
+          {discoverPeople.length ? (
+            <div className="people-grid">
+              {discoverPeople.map((person) => {
+                const personId = person.id || person.user_id;
+                return (
+                  <PersonCard
+                    key={personId}
+                    person={person}
+                    status={statusFor(personId)}
+                    onConnect={(value) => action(async () => {
+                      if (value === 'accept' || value === 'reject') {
+                        const request = graph.incoming.find((item) => item.user_id === personId);
+                        if (request) await respondFriendRequest(request.id, value);
+                      } else {
+                        await sendFriendRequest(personId);
+                      }
+                    })}
+                    onCancel={() => action(async () => {
+                      const request = graph.outgoing.find((item) => item.user_id === personId);
+                      if (request) await cancelFriendRequest(request.id);
+                    })}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="community-empty">
+              <h2>{search ? 'No people found.' : 'No discoverable members yet.'}</h2>
+              <p>{search ? 'Try another name, @username or skill.' : 'As more members join Favourit, we will surface people who may be a good fit to work with.'}</p>
+            </div>
+          )}
+          <div className="community-section-heading group-heading">
+            <div><div className="eyebrow">COMMUNITIES</div><h2>Groups you can join</h2></div>
+            <button className="text-button" onClick={() => setTab('groups')} type="button">View all →</button>
+          </div>
+          <div className="groups-grid">{groups.slice(0, 6).map((group) => <GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup} />)}</div>
+        </>
+      )}
+
+      {tab === 'friends' && (
+        <div className="community-panel-grid">
+          <div className="community-panel wide">
+            <div className="panel-heading"><div><div className="eyebrow">YOUR NETWORK</div><h2>Friends</h2></div><span>{graph.friends.length}</span></div>
+            {graph.friends.length ? graph.friends.map((person) => <PersonCard key={person.id || person.user_id} person={person} status="friends" onRemove={() => action(() => removeFriend(person.id || person.user_id))} />) : (
+              <div className="community-empty"><h2>No friends yet.</h2><p>Discover people you may want to work with and send your first connection request.</p><button className="primary" onClick={() => setTab('discover')} type="button">Discover people</button></div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'groups' && (
+        <>
+          <div className="community-section-heading"><div><div className="eyebrow">SKILL COMMUNITIES</div><h2>Find your people</h2></div><span>{groups.length} public groups</span></div>
+          <div className="groups-grid full">{groups.map((group) => <GroupCard key={group.id} group={group} onOpen={openGroup} onToggle={toggleGroup} />)}</div>
+        </>
+      )}
+
+      {tab === 'requests' && (
+        <div className="community-panel-grid">
+          <div className="community-panel wide">
+            <div className="panel-heading"><div><div className="eyebrow">CONNECTIONS</div><h2>Friend requests</h2></div><span>{graph.incoming.length}</span></div>
+            {graph.incoming.length ? graph.incoming.map((request) => <PersonCard key={request.id} person={request} status="incoming" onConnect={(value) => action(() => respondFriendRequest(request.id, value))} />) : (
+              <div className="community-empty"><h2>No pending requests.</h2><p>When someone wants to connect with you, their request will appear here.</p></div>
+            )}
+            {graph.outgoing.length > 0 && (
+              <div className="outgoing-requests">
+                <h3>Sent requests</h3>
+                {graph.outgoing.map((request) => (
+                  <div className="outgoing-row" key={request.id}>
+                    <Avatar person={request} onClick={() => openProfile(request)} />
+                    <button className="outgoing-user" onClick={() => openProfile(request)} type="button">@{request.username || 'member'}</button>
+                    <button className="secondary small" onClick={() => action(() => cancelFriendRequest(request.id))} type="button">Cancel</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
