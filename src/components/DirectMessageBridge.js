@@ -35,12 +35,6 @@ export default function DirectMessageBridge() {
     };
 
     const profileClick = event => {
-      const conversation = event.target.closest?.('.dm-conversation');
-      if (conversation) {
-        const handle = usernameFromConversation(conversation);
-        if (handle) { event.preventDefault(); event.stopPropagation(); openProfile(handle); return; }
-      }
-
       const chattingWith = event.target.closest?.('.dm-chatting-with');
       if (chattingWith) {
         const handle = chattingWith.querySelector('small')?.textContent?.trim()?.replace(/^@/, '');
