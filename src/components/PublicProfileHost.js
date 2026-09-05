@@ -25,6 +25,7 @@ export default function PublicProfileHost({ session }) {
     openLockRef.current = false;
     lastTargetRef.current = null;
     setTarget(null);
+    window.dispatchEvent(new CustomEvent('favourit:profile-closed'));
   };
 
   const openMessage = name => {
