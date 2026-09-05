@@ -70,11 +70,11 @@ export default function UsernameSection({ status: initialStatus = null, compact 
     </div>
     <div className="username-inline-warning">
       <strong>30-day change window</strong>
-      <span>{canChange ? 'Before saving: once you change your @, you cannot change it again for 30 days.' : `You can change your @ again on ${nextChangeLabel}.`}</span>
+      <span>{canChange ? 'Before saving: once you change your @, you cannot change it again for 30 days.' : `You can change your @ again on ${nextChangeLabel}. You can still roll suggestions now and save one when the window opens.`}</span>
     </div>
     <form onSubmit={submit}>
       <label className="username-inline-input"><span>@</span><input value={username} onChange={event => setUsername(event.target.value)} maxLength={20} disabled={!canChange || busy} aria-label="Favourit username" /></label>
-      {canChange && <div className="username-inline-suggestions"><div><small>✨ Suggestions for you</small><button type="button" onClick={roll} disabled={busy} aria-label="Generate new username suggestions">🎲 Roll</button></div>{suggestions.map(item => <button type="button" key={item} onClick={() => setUsername(item)} disabled={busy}>@{item}</button>)}</div>}
+      <div className="username-inline-suggestions"><div><small>✨ Randomized suggestions</small><button type="button" onClick={roll} disabled={busy} aria-label="Generate new username suggestions">🎲 Roll</button></div>{suggestions.map(item => <button type="button" key={item} onClick={() => canChange && setUsername(item)} disabled={busy || !canChange}>@{item}</button>)}</div>
       {error && <div className="username-inline-error">{error}</div>}
       {saved && <div className="username-inline-success">✓ {saved}</div>}
       <button className="primary" disabled={!canChange || busy || normalized.length < 3 || normalized === status.username}>{busy ? 'Saving…' : 'Save new @'}</button>
