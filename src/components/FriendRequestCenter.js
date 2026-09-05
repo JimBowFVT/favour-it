@@ -5,6 +5,14 @@ import './FriendRequestCenter.css';
 
 function openRequests() {
   window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
+  const communityNav = [...document.querySelectorAll('.topbar nav button')]
+    .find(node => node.textContent?.trim() === 'Community');
+  if (communityNav && !communityNav.classList.contains('active')) {
+    communityNav.click();
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
+    }, 80);
+  }
 }
 
 export default function FriendRequestCenter() {
