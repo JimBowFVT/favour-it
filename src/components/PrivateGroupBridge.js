@@ -66,6 +66,18 @@ export default function PrivateGroupBridge({ session }) {
   const typingChannelRef = useRef(null);
   const typingTimerRef = useRef(null);
 
+  const clearPrivateThread = () => {
+    setInfoOpen(false);
+    setCreateOpen(false);
+    setChat(null);
+    setMessages([]);
+    setBody('');
+    setReplyTo(null);
+    setSearch('');
+    setTranslations({});
+    setTyping(false);
+  };
+
   const refreshGroups = async () => {
     const rows = await getMyPrivateGroups();
     setGroups(Array.isArray(rows) ? rows : []);
@@ -79,11 +91,20 @@ export default function PrivateGroupBridge({ session }) {
       const groupsButton = [...document.querySelectorAll('.dm-sections-v2 button')].find(button => String(button.textContent || '').trim().startsWith('Groups'));
       setFabHost(document.querySelector('.dm-fab'));
       setGroupsTabHost(groupsButton || null);
-      const active = Boolean(root && groupsButton?.classList.contains('active'));
+
+      if (!root) {
+        document.querySelectorAll('.private-groups-host').forEach(node => node.classList.remove('private-groups-host'));
+        setHost(null);
+        setPanel(null);
+        clearPrivateThread();
+        return;
+      }
+
+      const active = Boolean(groupsButton?.classList.contains('active'));
       if (!active) {
         document.querySelectorAll('.private-groups-host').forEach(node => node.classList.remove('private-groups-host'));
         setHost(null);
-        setPanel(root || null);
+        setPanel(root);
         return;
       }
       const empty = [...root.querySelectorAll('.dm-empty')].find(node => String(node.textContent || '').includes('private group')) || root.querySelector('.dm-empty');
@@ -162,12 +183,7 @@ export default function PrivateGroupBridge({ session }) {
       if (event.key !== 'Escape') return;
       if (infoOpen) setInfoOpen(false);
       else if (createOpen) setCreateOpen(false);
-      else if (chat) {
-        setChat(null);
-        setMessages([]);
-        setReplyTo(null);
-        setSearch('');
-      }
+      else if (chat) clearPrivateThread();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -195,6 +211,11 @@ export default function PrivateGroupBridge({ session }) {
     const channel = typingChannelRef.current;
     if (!value.trim() || !channel || !chat?.conversation_id || !session?.user?.id) return;
     channel.send({ type: 'broadcast', event: 'typing', payload: { conversation_id: chat.conversation_id, user_id: session.user.id, typing_at: Date.now() } }).catch(() => {});
+  };
+
+  const closePrivateMessenger = () => {
+    clearPrivateThread();
+    window.setTimeout(() => document.querySelector('.dm-panel .dm-close')?.click(), 0);
   };
 
   const openCreate = async () => {
@@ -274,9 +295,7 @@ export default function PrivateGroupBridge({ session }) {
     setBusy(true);
     try {
       await leavePrivateGroup(chat.group_id);
-      setInfoOpen(false);
-      setChat(null);
-      setMessages([]);
+      clearPrivateThread();
       await refreshGroups();
     } catch (e) { setError(e.message || 'Could not leave this group.'); }
     finally { setBusy(false); }
@@ -300,11 +319,12 @@ export default function PrivateGroupBridge({ session }) {
   const overlayPortal = panel ? createPortal(<>
     {chat && <section className="private-group-thread" aria-label={`${chat.name} private group chat`}>
       <header className="private-group-thread-header">
-        <button type="button" className="dm-back" onClick={() => { setInfoOpen(false); setChat(null); setMessages([]); setReplyTo(null); setSearch(''); }}>←</button>
+        <button type="button" className="dm-back" onClick={clearPrivateThread}>←</button>
         <div className="private-group-thread-title"><span className="private-group-icon">{initials(chat.name)}</span><span><strong>{chat.name}</strong><small>{typing ? 'typing…' : `Private group · ${Number(chat.member_count || 0)} members`}</small></span></div>
         <button type="button" className="private-group-header-action" aria-label="Group details" title="Group details" onClick={() => setInfoOpen(true)}>ⓘ</button>
         <button type="button" className="private-group-header-action" onClick={() => { toggleMute(chat.conversation_id); setMuteVersion(value => value + 1); }}>{muted(chat.conversation_id) ? '🔕 Muted' : '🔔'}</button>
         <button type="button" className="private-group-header-action danger" onClick={leave} disabled={busy}>Leave</button>
+        <button type="button" className="private-group-header-action private-group-close" aria-label="Close Messages" title="Close Messages" onClick={closePrivateMessenger}>×</button>
       </header>
       <label className="private-group-search"><span>⌕</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search this group…" /></label>
       {error && <div className="dm-error">{error}</div>}
