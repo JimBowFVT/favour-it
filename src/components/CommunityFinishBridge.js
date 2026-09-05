@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getMyUsernameStatus } from '../lib/usernames';
 import './CommunityFinishBridge.css';
 
 const COMMUNITY_RULES = [
@@ -20,12 +21,25 @@ function ensureAnchor(parent, className, afterNode = null) {
   return anchor;
 }
 
+function cleanUsername(value) {
+  return String(value || '').replace(/^@/, '').trim().toLowerCase();
+}
+
 export default function CommunityFinishBridge() {
   const [rulesHost, setRulesHost] = useState(null);
   const [membersHost, setMembersHost] = useState(null);
   const [memberSearch, setMemberSearch] = useState('');
   const [memberCount, setMemberCount] = useState(0);
   const [moderatorTools, setModeratorTools] = useState(false);
+  const [myUsername, setMyUsername] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    getMyUsernameStatus()
+      .then(status => { if (active) setMyUsername(cleanUsername(status?.username)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const sync = () => {
@@ -46,6 +60,14 @@ export default function CommunityFinishBridge() {
       setMembersHost(memberAnchor);
       setModeratorTools(Boolean(members.querySelector('.member-remove')));
       setMemberCount(members.querySelectorAll('.member-row-wrap').length);
+
+      if (myUsername) {
+        members.querySelectorAll('.member-row-wrap').forEach(row => {
+          const handle = cleanUsername(row.querySelector('.member-row strong')?.textContent);
+          const removeButton = row.querySelector('.member-remove');
+          if (removeButton) removeButton.classList.toggle('community-self-remove-hidden', handle === myUsername);
+        });
+      }
     };
 
     const observer = new MutationObserver(sync);
@@ -54,11 +76,12 @@ export default function CommunityFinishBridge() {
     return () => {
       observer.disconnect();
       document.querySelectorAll('.community-finish-rules-anchor,.community-finish-members-anchor').forEach(node => node.remove());
+      document.querySelectorAll('.community-self-remove-hidden').forEach(node => node.classList.remove('community-self-remove-hidden'));
     };
-  }, []);
+  }, [myUsername]);
 
   useEffect(() => {
-    if (!membersHost) return;
+    if (!membersHost) return undefined;
     const term = memberSearch.trim().toLowerCase();
     const members = membersHost.parentElement;
     members?.querySelectorAll('.member-row-wrap').forEach(row => {
