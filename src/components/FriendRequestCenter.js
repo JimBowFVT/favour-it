@@ -1,23 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getMySocialGraph } from '../lib/social';
 import './FriendRequestCenter.css';
 
 function openRequests() {
-  const communityNav = [...document.querySelectorAll('button,a')].find(node => node.textContent?.trim() === 'Community');
-  if (communityNav) communityNav.click();
-  window.setTimeout(() => {
-    const requestsTab = [...document.querySelectorAll('.community-tabs button')].find(node => node.textContent?.trim().startsWith('Requests'));
-    requestsTab?.click();
-  }, 120);
+  window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
 }
 
 export default function FriendRequestCenter() {
   const [toast, setToast] = useState(null);
   const seen = useRef(new Set());
+  const knownRequestIds = useRef(new Set());
+
+  const refreshRequests = async (showNew = false) => {
+    try {
+      const graph = await getMySocialGraph();
+      const incoming = Array.isArray(graph?.incoming) ? graph.incoming : [];
+      if (showNew) {
+        const newest = incoming.find(request => request?.id && !knownRequestIds.current.has(request.id));
+        if (newest) {
+          setToast({
+            id: newest.id,
+            title: 'New friend request',
+            body: `${newest.display_name || `@${newest.username || 'Someone'}`} sent you a friend request.`,
+          });
+        }
+      }
+      knownRequestIds.current = new Set(incoming.map(request => request.id).filter(Boolean));
+      window.dispatchEvent(new CustomEvent('favourit:friend-request-updated'));
+    } catch (_) {}
+  };
 
   useEffect(() => {
-    if (!supabase) return undefined;
     let mounted = true;
+    refreshRequests(false);
+    if (!supabase) return undefined;
     let channel;
 
     (async () => {
@@ -42,14 +59,16 @@ export default function FriendRequestCenter() {
               title: row.title || 'New friend request',
               body: row.body || 'Someone sent you a friend request.',
             });
-            window.dispatchEvent(new CustomEvent('favourit:friend-request-updated'));
+            refreshRequests(false);
           })
           .subscribe();
       } catch (_) {}
     })();
 
+    const fallback = window.setInterval(() => refreshRequests(true), 8000);
     return () => {
       mounted = false;
+      window.clearInterval(fallback);
       if (channel) {
         try { supabase.removeChannel(channel); } catch (_) {}
       }
@@ -61,12 +80,6 @@ export default function FriendRequestCenter() {
     const timer = window.setTimeout(() => setToast(null), 7000);
     return () => window.clearTimeout(timer);
   }, [toast]);
-
-  useEffect(() => {
-    const listener = () => openRequests();
-    window.addEventListener('favourit:open-community-requests', listener);
-    return () => window.removeEventListener('favourit:open-community-requests', listener);
-  }, []);
 
   if (!toast) return null;
 
