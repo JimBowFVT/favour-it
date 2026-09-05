@@ -21,6 +21,12 @@ export default function PublicProfileHost({ session }) {
     return () => window.removeEventListener('favourit:open-profile', open);
   }, []);
 
+  useEffect(() => {
+    if (target) document.body.classList.add('favourit-profile-open');
+    else document.body.classList.remove('favourit-profile-open');
+    return () => document.body.classList.remove('favourit-profile-open');
+  }, [target]);
+
   const close = () => {
     openLockRef.current = false;
     lastTargetRef.current = null;
