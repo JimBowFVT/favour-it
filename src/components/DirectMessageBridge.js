@@ -11,17 +11,13 @@ export default function DirectMessageBridge() {
     const open = event => {
       const username = String(event.detail?.username || '').replace(/^@/, '').trim();
       if (!username) return;
-      const fab = document.querySelector('.dm-fab');
-      fab?.click();
+      document.querySelector('.dm-fab')?.click();
       window.setTimeout(() => {
         const input = document.querySelector('.dm-search input');
         if (!input) return;
         setReactInputValue(input, `@${username}`);
         window.setTimeout(() => {
-          const target = [...document.querySelectorAll('.dm-results > button')].find(button => {
-            const text = button.textContent || '';
-            return new RegExp(`(^|\\s)@${username.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(\\s|$)`, 'i').test(text);
-          });
+          const target = [...document.querySelectorAll('.dm-results > button')].find(button => (button.textContent || '').toLowerCase().includes(`@${username.toLowerCase()}`));
           target?.click();
         }, 320);
       }, 80);
