@@ -1,26 +1,37 @@
 .settings-launcher {
   position: fixed;
-  right: 24px;
+  left: 24px;
+  right: auto;
   bottom: 24px;
-  z-index: 1090;
-  width: 44px;
+  z-index: 1190;
+  min-width: 44px;
   height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(143, 158, 255, 0.28);
-  background: #1b202b;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 158, 255, 0.24);
+  background: rgba(17, 23, 34, 0.94);
   color: #cbd2ff;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  font-size: 18px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  font: 600 13px Poppins, system-ui, sans-serif;
   line-height: 1;
   cursor: pointer;
   transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+.settings-launcher::after {
+  content: 'Settings';
+}
+
 .settings-launcher:hover {
   transform: translateY(-2px);
-  background: #242b39;
-  border-color: rgba(143, 158, 255, 0.55);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  background: #202735;
+  border-color: rgba(143, 158, 255, 0.52);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.38);
 }
 
 .settings-launcher:focus-visible {
@@ -32,11 +43,24 @@
   transform: translateY(0);
 }
 
+.favourit-profile-open .settings-launcher {
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (max-width: 600px) {
   .settings-launcher {
-    right: 14px;
+    left: 14px;
     bottom: 14px;
     width: 42px;
+    min-width: 42px;
     height: 42px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 18px;
+  }
+
+  .settings-launcher::after {
+    display: none;
   }
 }
