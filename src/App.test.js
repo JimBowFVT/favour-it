@@ -1,4 +1,6 @@
 import { calculateFee, calculateSellerPayout, favToUnits, getDailyReward, unitsToFAV, usdValueToFAV } from './data/economy';
+import { deals as exploreSeedDeals } from './data/deals';
+import { resolveServiceCategory, serviceCategories, serviceFamilies } from './data/serviceCategories';
 import { filterDeals, sortDeals } from './lib/marketplace';
 
 describe('FAV economy', () => {
@@ -41,5 +43,34 @@ describe('Marketplace helpers', () => {
     expect(sortDeals(deals, 'price-low').map(d => d.price)).toEqual([20, 50, 80]);
     expect(deals.map(d => d.price)).toEqual([50, 20, 80]);
     expect(sortDeals(deals, 'rating')[0].rating).toBe(4.9);
+  });
+});
+
+describe('Explore service taxonomy', () => {
+  test('keeps the approved marketplace at 44 grouped categories', () => {
+    expect(serviceCategories).toHaveLength(44);
+    expect(new Set(serviceCategories.map(category => category.id)).size).toBe(44);
+    expect(new Set(serviceCategories.map(category => category.label)).size).toBe(44);
+    const familyIds = new Set(serviceFamilies.map(family => family.id));
+    expect(serviceCategories.every(category => familyIds.has(category.family))).toBe(true);
+  });
+
+  test('maps legacy broad categories into approved service categories', () => {
+    expect(resolveServiceCategory('Design')?.label).toBe('Graphic Design & Branding');
+    expect(resolveServiceCategory('Development')?.label).toBe('Web Development');
+    expect(resolveServiceCategory('Lifestyle')?.label).toBe('Coaching & Learning');
+  });
+
+  test('gives every Explore sample a valid Basic package and approved category', () => {
+    expect(exploreSeedDeals.length).toBeGreaterThan(0);
+    exploreSeedDeals.forEach(deal => {
+      expect(resolveServiceCategory(deal.category)).not.toBeNull();
+      expect(deal.packages.some(servicePackage => servicePackage.tier === 'basic')).toBe(true);
+      deal.packages.forEach(servicePackage => {
+        expect(servicePackage.price).toBeGreaterThan(0);
+        expect(servicePackage.deliveryDays).toBeGreaterThanOrEqual(1);
+        expect(servicePackage.revisions).toBeGreaterThanOrEqual(0);
+      });
+    });
   });
 });
