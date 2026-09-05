@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { blockUser, getMySocialGraph, respondFriendRequest, sendFriendRequest, unblockUser } from '../lib/social';
+import { blockUser, cancelFriendRequest, getMySocialGraph, removeFriend, respondFriendRequest, sendFriendRequest, unblockUser } from '../lib/social';
 import { getPublicProfile, getPublicProfileByUsername, reportUser } from '../lib/publicProfile';
 import './PublicProfile.css';
 
@@ -69,11 +69,27 @@ export default function PublicProfile({ userId, username, session, onClose, onMe
 
   const respondToIncomingRequest = async response => {
     if (!profile?.id) throw new Error('Profile is unavailable.');
+    if (profile.friend_request_id) {
+      await respondFriendRequest(profile.friend_request_id, response);
+      return;
+    }
     const graph = await getMySocialGraph();
     const incoming = Array.isArray(graph?.incoming) ? graph.incoming : [];
     const request = incoming.find(item => item.user_id === profile.id);
     if (!request?.id) throw new Error('This friend request is no longer pending.');
     await respondFriendRequest(request.id, response);
+  };
+
+  const cancelOutgoingRequest = async () => {
+    if (profile?.friend_request_id) {
+      await cancelFriendRequest(profile.friend_request_id);
+      return;
+    }
+    const graph = await getMySocialGraph();
+    const outgoing = Array.isArray(graph?.outgoing) ? graph.outgoing : [];
+    const request = outgoing.find(item => item.user_id === profile.id);
+    if (!request?.id) throw new Error('This friend request is no longer pending.');
+    await cancelFriendRequest(request.id);
   };
 
   if (!userId && !username) return null;
@@ -96,9 +112,9 @@ export default function PublicProfile({ userId, username, session, onClose, onMe
   const renderConnectionActions = () => {
     if (isSelf) return null;
     let connectionAction = null;
-    if (friendStatus === 'friends') connectionAction = <span className="connection-state">Friends ✓</span>;
+    if (friendStatus === 'friends') connectionAction = <><span className="connection-state">Friends ✓</span><button className="secondary" disabled={busy} onClick={() => { if (window.confirm(`Remove @${profile.username} from your friends?`)) action(() => removeFriend(profile.id)); }}>Remove friend</button></>;
     else if (friendStatus === 'incoming') connectionAction = <><button className="primary" disabled={busy || blocked} onClick={() => action(() => respondToIncomingRequest('accept'))}>Accept</button><button className="secondary" disabled={busy || blocked} onClick={() => action(() => respondToIncomingRequest('reject'))}>Decline</button></>;
-    else if (friendStatus === 'outgoing') connectionAction = <button className="secondary" disabled>Request sent</button>;
+    else if (friendStatus === 'outgoing') connectionAction = <><button className="secondary" disabled>Request sent</button><button className="secondary" disabled={busy} onClick={() => action(cancelOutgoingRequest)}>Cancel request</button></>;
     else if (!blocked) connectionAction = <button className="primary" disabled={busy} onClick={() => action(() => sendFriendRequest(profile.id))}>Connect</button>;
     return <>{connectionAction}{!blocked && <button className="secondary" disabled={busy} onClick={() => onMessage?.(profile.username)}>Message</button>}<div className="public-profile-menu-wrap"><button className="profile-more" onClick={() => setMenuOpen(value => !value)} aria-label="More actions">•••</button>{menuOpen && <div className="public-profile-menu">{profile.blocked_by_me ? <button disabled={busy} onClick={() => action(() => unblockUser(profile.id))}>Unblock</button> : <button className="danger" disabled={busy} onClick={() => { if (window.confirm(`Block @${profile.username}? Your existing conversation will be kept.`)) action(() => blockUser(profile.id)); }}>Block</button>}<button disabled={busy} onClick={report}>Report</button></div>}</div></>;
   };
