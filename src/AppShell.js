@@ -4,6 +4,7 @@ import AuthGate from './components/AuthGate';
 import ActivityCenter from './components/ActivityCenter';
 import FavouritLoader from './components/FavouritLoader';
 import AdminPanel from './components/AdminPanel';
+import AdminMessageReports from './components/AdminMessageReports';
 import UsernameGate from './components/UsernameGate';
 import UsernameManager from './components/UsernameManager';
 import DirectMessaging from './components/DirectMessaging';
@@ -24,7 +25,7 @@ useEffect(()=>{if(!session?.user?.id||!supabase||adminPath)return undefined;let 
 if(!isSupabaseConfigured)return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><h2>Connect your Favourit backend</h2><p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p></div></div>;
 if(loading||!uiReady)return <FavouritLoader title="Connecting to Favourit" subtitle="Checking your secure account…"/>;
 if(!session)return <AuthGate/>;
-if(adminPath)return <AdminPanel/>;
+if(adminPath)return <><AdminPanel/><main style={{maxWidth:1200,margin:'0 auto',padding:'0 24px 48px'}}><AdminMessageReports/></main></>;
 const pending=getPendingOnboarding();const onboardingPending=Boolean(pending&&((pending.userId&&pending.userId===session.user.id)||pending.email===session.user.email?.toLowerCase()));if(onboardingPending&&!usernameStatus?.username)return <UsernameGate displayName={usernameStatus?.display_name||session.user.user_metadata?.display_name||''} email={usernameStatus?.email||session.user.email||''} onComplete={profileData=>{localStorage.removeItem(USERNAME_ONBOARDING_KEY);localStorage.setItem(usernameCacheKey(session.user.id),profileData.username);setUsernameStatus({...usernameStatus,...profileData,username_chosen:true});}}/>;
-return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus}/><UsernameManager status={usernameStatus} onChanged={status=>{localStorage.setItem(usernameCacheKey(session.user.id),status.username);setUsernameStatus(status);}}/><DirectMessaging session={session} usernameStatus={usernameStatus}/><DirectMessageBridge/><PublicProfileHost session={session}/><ActivityCenter/><FriendRequestCenter/><FriendRequestBadge/><SettingsLauncher session={session} profile={profile} onProfileChanged={next=>setProfile(next)}/></>;
+return <><App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus}/><UsernameManager status={usernameStatus} onChanged={status=>{localStorage.setItem(usernameCacheKey(session.user.id),status.username);setUsernameStatus(status);}}/><DirectMessaging session={session}/><DirectMessageBridge/><PublicProfileHost session={session}/><ActivityCenter/><FriendRequestCenter/><FriendRequestBadge/><SettingsLauncher session={session} profile={profile} onProfileChanged={next=>setProfile(next)}/></>;
 }
