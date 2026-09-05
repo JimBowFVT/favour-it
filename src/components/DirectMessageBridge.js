@@ -1,0 +1,33 @@
+import { useEffect } from 'react';
+
+function setReactInputValue(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+export default function DirectMessageBridge() {
+  useEffect(() => {
+    const open = event => {
+      const username = String(event.detail?.username || '').replace(/^@/, '').trim();
+      if (!username) return;
+      const fab = document.querySelector('.dm-fab');
+      fab?.click();
+      window.setTimeout(() => {
+        const input = document.querySelector('.dm-search input');
+        if (!input) return;
+        setReactInputValue(input, `@${username}`);
+        window.setTimeout(() => {
+          const target = [...document.querySelectorAll('.dm-results > button')].find(button => {
+            const text = button.textContent || '';
+            return new RegExp(`(^|\\s)@${username.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(\\s|$)`, 'i').test(text);
+          });
+          target?.click();
+        }, 320);
+      }, 80);
+    };
+    window.addEventListener('favourit:open-direct-message', open);
+    return () => window.removeEventListener('favourit:open-direct-message', open);
+  }, []);
+  return null;
+}
