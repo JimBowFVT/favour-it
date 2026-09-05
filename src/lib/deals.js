@@ -17,6 +17,14 @@ const normalizeDeal = (row, sellerName) => ({
   status: row.status,
 });
 
+async function getSellerNames(rows) {
+  const sellerIds = [...new Set((rows || []).map(row => row.seller_id).filter(Boolean))];
+  if (!sellerIds.length) return {};
+  const { data: profiles, error } = await supabase.from('profiles').select('id, display_name').in('id', sellerIds);
+  if (error) throw error;
+  return Object.fromEntries((profiles || []).map(profile => [profile.id, profile.display_name]));
+}
+
 export async function getPublishedDeals() {
   const { data, error } = await supabase
     .from('deals')
@@ -24,20 +32,23 @@ export async function getPublishedDeals() {
     .eq('status', 'published')
     .order('created_at', { ascending: false });
   if (error) throw error;
-
   const rows = data || [];
-  const sellerIds = [...new Set(rows.map(row => row.seller_id).filter(Boolean))];
-  let profileMap = {};
-  if (sellerIds.length) {
-    const { data: profiles, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .in('id', sellerIds);
-    if (profileError) throw profileError;
-    profileMap = Object.fromEntries((profiles || []).map(profile => [profile.id, profile.display_name]));
-  }
-
+  const profileMap = await getSellerNames(rows);
   return rows.map(row => normalizeDeal(row, profileMap[row.seller_id]));
+}
+
+export async function getDealById(dealId) {
+  if (!dealId) return null;
+  const { data: row, error } = await supabase
+    .from('deals')
+    .select('id, seller_id, title, description, category, price_fav, delivery_days, status, created_at')
+    .eq('id', dealId)
+    .eq('status', 'published')
+    .maybeSingle();
+  if (error) throw error;
+  if (!row) return null;
+  const profileMap = await getSellerNames([row]);
+  return normalizeDeal(row, profileMap[row.seller_id]);
 }
 
 export async function createDeal({ title, description, category, price, delivery }) {
