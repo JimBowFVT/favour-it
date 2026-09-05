@@ -6,10 +6,12 @@ import {
   getOrCreateDirectConversation,
   searchUsersByUsername,
 } from '../lib/directMessaging';
-import { blockUser, getCommunityGroupMessages, listCommunityGroups } from '../lib/social';
+import { blockUser, getCommunityGroupMessages, getMySocialGraph, listCommunityGroups } from '../lib/social';
 import './DirectMessageBridge.css';
 
 const MUTE_KEY = 'favourit:muted-conversations';
+let friendUsernameCache = new Set();
+let friendCachePromise = null;
 
 function readMuteState() {
   try { return JSON.parse(localStorage.getItem(MUTE_KEY) || '{}') || {}; }
@@ -39,6 +41,42 @@ function cleanUsername(value) { return String(value || '').replace(/^@/, '').tri
 function threadUsername() { return cleanUsername(document.querySelector('.dm-thread-header .dm-thread-identity small')?.textContent); }
 function threadName() { return String(document.querySelector('.dm-thread-header .dm-thread-identity strong')?.textContent || '').trim(); }
 function isCommunityThread() { return String(document.querySelector('.dm-thread-header .dm-thread-identity small')?.textContent || '').trim().toLowerCase() === 'community chat'; }
+
+async function loadFriendUsernames(force = false) {
+  if (!force && friendUsernameCache.size) return friendUsernameCache;
+  if (friendCachePromise) return friendCachePromise;
+  friendCachePromise = getMySocialGraph()
+    .then(graph => {
+      friendUsernameCache = new Set((Array.isArray(graph?.friends) ? graph.friends : []).map(person => cleanUsername(person?.username)).filter(Boolean));
+      return friendUsernameCache;
+    })
+    .finally(() => { friendCachePromise = null; });
+  return friendCachePromise;
+}
+
+function setMediaButtonLocked(button, locked) {
+  if (!button) return;
+  button.disabled = Boolean(locked);
+  button.classList.toggle('dm-first-media-locked', Boolean(locked));
+  button.title = locked ? 'Your first message to someone who is not your friend must be text only.' : '';
+  button.setAttribute('aria-disabled', locked ? 'true' : 'false');
+}
+
+async function guardFirstMessageMedia() {
+  const menu = document.querySelector('.dm-panel.is-thread .dm-attach-menu');
+  if (!menu) return;
+  const mediaButton = [...menu.querySelectorAll('button')].find(button => String(button.textContent || '').toLowerCase().includes('photos'));
+  if (!mediaButton) return;
+  if (isCommunityThread()) { setMediaButtonLocked(mediaButton, false); return; }
+  if (document.querySelector('.dm-panel.is-thread .dm-messages .dm-message-row')) { setMediaButtonLocked(mediaButton, false); return; }
+  const username = threadUsername();
+  if (!username) return;
+  try {
+    const friends = await loadFriendUsernames();
+    if (!document.body.contains(mediaButton)) return;
+    setMediaButtonLocked(mediaButton, !friends.has(username));
+  } catch (_) {}
+}
 
 async function resolveUserId(username) {
   const users = await searchUsersByUsername(username);
@@ -200,14 +238,31 @@ export default function DirectMessageBridge() {
       const username = cleanUsername(event.detail?.username); if (!username) return;
       document.querySelector('.dm-fab')?.click(); window.setTimeout(() => { const input = document.querySelector('.dm-search input'); if (!input) return; setReactInputValue(input, `@${username}`); window.setTimeout(() => { const target = [...document.querySelectorAll('.dm-search-results > button, .dm-results > button')].find(button => (button.textContent || '').toLowerCase().includes(`@${username}`)); target?.click(); }, 320); }, 80);
     };
-    const syncUi = () => { lockRequestComposer(); ensureThreadTools(); if (!document.querySelector('.dm-panel.is-thread')) closeFinishModal(); };
+    const invalidateFriends = () => {
+      friendUsernameCache = new Set();
+      loadFriendUsernames(true).then(() => guardFirstMessageMedia()).catch(() => {});
+    };
+    const syncUi = () => {
+      lockRequestComposer();
+      ensureThreadTools();
+      guardFirstMessageMedia().catch(() => {});
+      if (!document.querySelector('.dm-panel.is-thread')) closeFinishModal();
+    };
     const onKeyDown = event => {
       if (event.key === 'Escape' && document.querySelector('.dm-finish-backdrop')) { event.preventDefault(); closeFinishModal(); return; }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && document.querySelector('.dm-panel.is-thread')) { event.preventDefault(); openConversationSearch(); }
     };
-    window.addEventListener('favourit:open-direct-message', openMessage); document.addEventListener('keydown', onKeyDown);
+    loadFriendUsernames().catch(() => {});
+    window.addEventListener('favourit:open-direct-message', openMessage);
+    window.addEventListener('favourit:friend-request-updated', invalidateFriends);
+    document.addEventListener('keydown', onKeyDown);
     const observer = new MutationObserver(syncUi); observer.observe(document.body, { childList:true, subtree:true }); syncUi();
-    return () => { window.removeEventListener('favourit:open-direct-message', openMessage); document.removeEventListener('keydown', onKeyDown); observer.disconnect(); unlockComposer(); closeFinishModal(); };
+    return () => {
+      window.removeEventListener('favourit:open-direct-message', openMessage);
+      window.removeEventListener('favourit:friend-request-updated', invalidateFriends);
+      document.removeEventListener('keydown', onKeyDown);
+      observer.disconnect(); unlockComposer(); closeFinishModal();
+    };
   }, []);
   return null;
 }
