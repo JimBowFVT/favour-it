@@ -11,6 +11,13 @@ export async function getCurrentProfile() {
     supabase.from('wallets').select('user_id, available_fav, held_fav, updated_at').eq('user_id', user.id).maybeSingle(),
   ]);
 
+  if (profile?.preferred_language) {
+    try {
+      localStorage.setItem('favourit_language', profile.preferred_language);
+      localStorage.setItem('favourit:language', profile.preferred_language);
+    } catch (_) {}
+  }
+
   return { profile, wallet, user, error: profileError || walletError || null };
 }
 
