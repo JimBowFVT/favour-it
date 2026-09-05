@@ -12,6 +12,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install pinned OpenZeppelin contracts
+        run: |
+          mkdir -p contracts/lib/openzeppelin-contracts
+          git -C contracts/lib/openzeppelin-contracts init
+          git -C contracts/lib/openzeppelin-contracts remote add origin https://github.com/OpenZeppelin/openzeppelin-contracts.git
+          git -C contracts/lib/openzeppelin-contracts fetch --depth 1 origin cab19933c33c2ad1d4c7a84864a3601dddfd16f3
+          git -C contracts/lib/openzeppelin-contracts checkout --detach FETCH_HEAD
+
+      - name: Test FAV smart contracts
+        run: forge test --root contracts -vv
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
