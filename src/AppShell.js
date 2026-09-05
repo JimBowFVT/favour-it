@@ -12,6 +12,7 @@ import UsernameManager from './components/UsernameManager';
 import DirectMessagingV2 from './components/DirectMessagingV2';
 import DirectMessageBridge from './components/DirectMessageBridge';
 import PrivateGroupBridge from './components/PrivateGroupBridge';
+import CommunityFinishBridge from './components/CommunityFinishBridge';
 import SettingsLauncher from './components/SettingsLauncher';
 import PublicProfileHost from './components/PublicProfileHost';
 import FriendRequestCenter from './components/FriendRequestCenter';
@@ -279,6 +280,7 @@ export default function AppShell() {
     <DirectMessagingV2 session={session} />
     <DirectMessageBridge />
     <PrivateGroupBridge session={session} />
+    <CommunityFinishBridge />
     <PublicProfileHost session={session} />
     <ActivityCenter />
     <FriendRequestCenter />
