@@ -21,7 +21,20 @@ export default function PublicProfile({ userId, username, session, onClose, onMe
     setError('');
     setMenuOpen(false);
     try {
-      const next = userId ? await getPublicProfile(userId) : await getPublicProfileByUsername(username);
+      let next = null;
+      let idError = null;
+
+      if (userId) {
+        try { next = await getPublicProfile(userId); }
+        catch (err) { idError = err; }
+      }
+
+      if (!next && username) {
+        next = await getPublicProfileByUsername(username);
+      } else if (!next && idError) {
+        throw idError;
+      }
+
       if (requestId !== requestIdRef.current) return;
       if (!next) throw new Error('User not found.');
       setProfile(next);
