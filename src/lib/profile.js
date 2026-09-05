@@ -8,7 +8,7 @@ export async function getCurrentProfile() {
 
   const [{ data: profile, error: profileError }, { data: wallet, error: walletError }] = await Promise.all([
     supabase.from('profiles').select('id, display_name, avatar_url, bio, created_at').eq('id', user.id).maybeSingle(),
-    supabase.from('wallets').select('user_id, available_micro_fav, held_micro_fav').eq('user_id', user.id).maybeSingle(),
+    supabase.from('wallets').select('user_id, available_fav, held_fav, updated_at').eq('user_id', user.id).maybeSingle(),
   ]);
 
   return { profile, wallet, user, error: profileError || walletError || null };
