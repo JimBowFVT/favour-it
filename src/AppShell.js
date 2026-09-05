@@ -11,6 +11,7 @@ import UsernameGate from './components/UsernameGate';
 import UsernameManager from './components/UsernameManager';
 import DirectMessagingV2 from './components/DirectMessagingV2';
 import DirectMessageBridge from './components/DirectMessageBridge';
+import MessageRequestListBridge from './components/MessageRequestListBridge';
 import PrivateGroupBridge from './components/PrivateGroupBridge';
 import CommunityFinishBridge from './components/CommunityFinishBridge';
 import CommunityModeratorMessageBridge from './components/CommunityModeratorMessageBridge';
@@ -280,6 +281,7 @@ export default function AppShell() {
     }} />
     <DirectMessagingV2 session={session} />
     <DirectMessageBridge />
+    <MessageRequestListBridge />
     <PrivateGroupBridge session={session} />
     <CommunityFinishBridge />
     <CommunityModeratorMessageBridge />
