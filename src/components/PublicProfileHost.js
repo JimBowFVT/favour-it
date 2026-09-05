@@ -16,5 +16,6 @@ export default function PublicProfileHost({ session }) {
     return () => { window.removeEventListener('favourit:open-profile', open); document.removeEventListener('click', openFromDirectChat, true); };
   }, []);
   const close = () => { setUserId(null); setUsername(null); };
-  return <PublicProfile userId={userId} username={username} session={session} onClose={close} onMessage={name => window.dispatchEvent(new CustomEvent('favourit:open-direct-message', { detail: { username: name } }))} />;
+  const openMessage = name => { close(); window.setTimeout(() => window.dispatchEvent(new CustomEvent('favourit:open-direct-message', { detail: { username: name } })), 0); };
+  return <PublicProfile userId={userId} username={username} session={session} onClose={close} onMessage={openMessage} />;
 }
