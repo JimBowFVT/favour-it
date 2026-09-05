@@ -11,6 +11,7 @@ import {
   reportDirectMessage,
 } from '../lib/directMessaging';
 import {
+  getMySocialGraph,
   listCommunityGroups,
   getCommunityGroupMessages,
   sendCommunityGroupMessage,
@@ -18,6 +19,7 @@ import {
   toggleCommunityGroupMessageStar,
   reportCommunityGroupMessage,
 } from '../lib/social';
+import { getMyPrivateGroups, createPrivateGroup, sendPrivateGroupMessage, leavePrivateGroup } from '../lib/privateGroups';
 import './DirectMessaging.css';
 
 const TYPING_TTL_MS = 5000;
@@ -88,6 +90,7 @@ export default function DirectMessaging({ session }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [privateGroups, setPrivateGroups] = useState([]);
   const [communities, setCommunities] = useState([]);
   const [selected, setSelected] = useState(null);
   const [selectedType, setSelectedType] = useState('direct');
@@ -106,6 +109,10 @@ export default function DirectMessaging({ session }) {
   const [reportDetails, setReportDetails] = useState('');
   const [translation, setTranslation] = useState(null);
   const [translationBusy, setTranslationBusy] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupFriends, setGroupFriends] = useState([]);
+  const [groupMemberIds, setGroupMemberIds] = useState([]);
 
   const audioRef = useRef(null);
   const endRef = useRef(null);
@@ -157,7 +164,7 @@ export default function DirectMessaging({ session }) {
   };
 
   const announceTyping = id => {
-    if (!id || selectedType !== 'direct' || !bodyRef.current.trim()) return;
+    if (!id || selectedType === 'community' || !bodyRef.current.trim()) return;
     ensureTypingChannel(id).then(channel => {
       const entry = typingChannelsRef.current.get(id);
       if (!channel || !entry?.subscribed) return;
@@ -188,6 +195,17 @@ export default function DirectMessaging({ session }) {
     return safe;
   };
 
+  const refreshPrivateGroups = async () => {
+    const data = await getMyPrivateGroups();
+    const safe = Array.isArray(data) ? data : [];
+    setPrivateGroups(safe);
+    if (selectedType === 'group' && conversationRef.current) {
+      const current = safe.find(group => group.conversation_id === conversationRef.current);
+      if (current) setSelected(current);
+    }
+    return safe;
+  };
+
   const refreshCommunities = async () => {
     const data = await listCommunityGroups();
     const joined = (Array.isArray(data) ? data : []).filter(group => group.is_joined);
@@ -196,7 +214,7 @@ export default function DirectMessaging({ session }) {
   };
 
   const refreshInbox = async () => {
-    try { await Promise.all([refreshPeople(), refreshCommunities()]); }
+    try { await Promise.all([refreshPeople(), refreshPrivateGroups(), refreshCommunities()]); }
     catch (e) { setError(e.message || 'Could not load messages.'); }
   };
 
@@ -216,22 +234,22 @@ export default function DirectMessaging({ session }) {
 
   const loadThread = async (id, type = selectedType) => {
     if (!id) return;
-    if (type === 'direct') {
-      const data = await getDirectMessages(id);
-      setMessages(Array.isArray(data) ? data : []);
-      await markRead(id);
-      await refreshReadState(id);
-      await ensureTypingChannel(id);
-    } else {
+    if (type === 'community') {
       const data = await getCommunityGroupMessages(id);
       setMessages(Array.isArray(data) ? data : []);
+      return;
     }
+    const data = await getDirectMessages(id);
+    setMessages(Array.isArray(data) ? data : []);
+    await markRead(id);
+    if (type === 'direct') await refreshReadState(id);
+    await ensureTypingChannel(id);
   };
 
   useEffect(() => {
     if (!session?.user?.id) return undefined;
     refreshInbox();
-    const timer = window.setInterval(refreshPeople, 7000);
+    const timer = window.setInterval(() => Promise.all([refreshPeople(), refreshPrivateGroups()]).catch(() => {}), 7000);
     return () => window.clearInterval(timer);
   }, [session?.user?.id]);
 
@@ -249,6 +267,7 @@ export default function DirectMessaging({ session }) {
   useEffect(() => {
     if (!session?.user?.id) return undefined;
     conversations.forEach(item => ensureTypingChannel(item.conversation_id));
+    privateGroups.forEach(item => ensureTypingChannel(item.conversation_id));
     const timer = window.setInterval(() => {
       const now = Date.now();
       typingLastSeenRef.current.forEach((timestamp, id) => {
@@ -263,7 +282,7 @@ export default function DirectMessaging({ session }) {
       });
     }, 250);
     return () => window.clearInterval(timer);
-  }, [conversations, session?.user?.id]);
+  }, [conversations, privateGroups, session?.user?.id]);
 
   useEffect(() => {
     if (!conversationId || !selected) return undefined;
@@ -273,7 +292,7 @@ export default function DirectMessaging({ session }) {
       catch (e) { if (active) setError(e.message || 'Could not load conversation.'); }
     };
     refresh();
-    const timer = window.setInterval(refresh, selectedType === 'direct' ? 1800 : 2200);
+    const timer = window.setInterval(refresh, selectedType === 'community' ? 2200 : 1800);
     return () => { active = false; window.clearInterval(timer); };
   }, [conversationId, selectedType]);
 
@@ -284,7 +303,7 @@ export default function DirectMessaging({ session }) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
         if (payload.new.sender_id !== session.user.id) {
           if (payload.new.conversation_id !== conversationRef.current) playPing(audioRef, true);
-          refreshPeople().catch(() => {});
+          Promise.all([refreshPeople(), refreshPrivateGroups()]).catch(() => {});
         }
       })
       .subscribe();
@@ -361,6 +380,16 @@ export default function DirectMessaging({ session }) {
     setOpen(true);
   };
 
+  const openPrivateGroup = group => {
+    setSelected(group);
+    setSelectedType('group');
+    setConversationId(group.conversation_id);
+    conversationRef.current = group.conversation_id;
+    setSection('groups');
+    setMenuId(null);
+    setOpen(true);
+  };
+
   const openCommunity = group => {
     setSelected(group);
     setSelectedType('community');
@@ -380,7 +409,7 @@ export default function DirectMessaging({ session }) {
   }, [busy]);
 
   const leaveThread = async () => {
-    if (conversationId && selectedType === 'direct') await markRead(conversationId);
+    if (conversationId && selectedType !== 'community') await markRead(conversationId);
     setSelected(null);
     setSelectedType('direct');
     setConversationId(null);
@@ -395,7 +424,7 @@ export default function DirectMessaging({ session }) {
   };
 
   const closeMessenger = async () => {
-    if (conversationId && selectedType === 'direct') await markRead(conversationId);
+    if (conversationId && selectedType !== 'community') await markRead(conversationId);
     setOpen(false);
     setSelected(null);
     setConversationId(null);
@@ -416,6 +445,9 @@ export default function DirectMessaging({ session }) {
       if (selectedType === 'direct') {
         await sendDirectMessage(conversationId, body.trim(), replyTo?.id || null);
         playPing(audioRef, false);
+      } else if (selectedType === 'group') {
+        await sendPrivateGroupMessage(selected.group_id, body.trim(), replyTo?.id || null);
+        playPing(audioRef, false);
       } else {
         await sendCommunityGroupMessage(conversationId, body.trim(), replyTo?.id || null);
       }
@@ -435,7 +467,7 @@ export default function DirectMessaging({ session }) {
     const value = event.target.value;
     setBody(value);
     bodyRef.current = value;
-    if (selectedType === 'direct' && value.trim()) announceTyping(conversationId);
+    if (selectedType !== 'community' && value.trim()) announceTyping(conversationId);
   };
 
   const removeMessage = async item => {
@@ -450,8 +482,8 @@ export default function DirectMessaging({ session }) {
     setBusy(true);
     setError('');
     try {
-      if (selectedType === 'direct') await deleteOwnDirectMessage(item.id);
-      else await deleteOwnCommunityGroupMessage(item.id);
+      if (selectedType === 'community') await deleteOwnCommunityGroupMessage(item.id);
+      else await deleteOwnDirectMessage(item.id);
       await loadThread(conversationId, selectedType);
     } catch (e) {
       setError(e.message || 'Could not delete message.');
@@ -466,8 +498,8 @@ export default function DirectMessaging({ session }) {
     setBusy(true);
     setError('');
     try {
-      if (selectedType === 'direct') await toggleDirectMessageStar(item.id);
-      else await toggleCommunityGroupMessageStar(item.id);
+      if (selectedType === 'community') await toggleCommunityGroupMessageStar(item.id);
+      else await toggleDirectMessageStar(item.id);
       await loadThread(conversationId, selectedType);
     } catch (e) {
       setError(e.message || 'Could not update star.');
@@ -506,8 +538,8 @@ export default function DirectMessaging({ session }) {
     setBusy(true);
     setError('');
     try {
-      if (selectedType === 'direct') await reportDirectMessage(reportItem.id, reportCategory, reportDetails.trim());
-      else await reportCommunityGroupMessage(reportItem.id, reportCategory, reportDetails.trim());
+      if (selectedType === 'community') await reportCommunityGroupMessage(reportItem.id, reportCategory, reportDetails.trim());
+      else await reportDirectMessage(reportItem.id, reportCategory, reportDetails.trim());
       setReportItem(null);
       setReportDetails('');
       setReportCategory(REPORT_CATEGORIES[0]);
@@ -524,6 +556,7 @@ export default function DirectMessaging({ session }) {
     setError('');
     try {
       if (target.type === 'direct') await sendDirectMessage(target.id, forwardItem.body);
+      else if (target.type === 'group') await sendPrivateGroupMessage(target.groupId, forwardItem.body);
       else await sendCommunityGroupMessage(target.id, forwardItem.body);
       setForwardItem(null);
       setMenuId(null);
@@ -555,8 +588,54 @@ export default function DirectMessaging({ session }) {
     touchStartRef.current = { id: '', x: 0 };
   };
 
-  const unread = conversations.reduce((sum, item) => sum + (item.conversation_id === conversationId && open ? 0 : Number(item.unread_count || 0)), 0);
-  const currentTyping = Boolean(selectedType === 'direct' && conversationId && typingByConversation[conversationId]);
+  const openCreateGroup = async () => {
+    setError('');
+    try {
+      const graph = await getMySocialGraph();
+      setGroupFriends(Array.isArray(graph?.friends) ? graph.friends : []);
+      setGroupName('');
+      setGroupMemberIds([]);
+      setCreateGroupOpen(true);
+    } catch (e) { setError(e.message || 'Could not load your friends.'); }
+  };
+
+  const toggleGroupFriend = userId => {
+    setGroupMemberIds(current => current.includes(userId) ? current.filter(id => id !== userId) : current.length >= 19 ? current : [...current, userId]);
+  };
+
+  const createGroup = async () => {
+    if (busy || groupName.trim().length < 2 || !groupMemberIds.length) return;
+    setBusy(true);
+    setError('');
+    try {
+      const groupId = await createPrivateGroup(groupName.trim(), groupMemberIds);
+      const fresh = await refreshPrivateGroups();
+      const group = fresh.find(item => item.group_id === groupId);
+      setCreateGroupOpen(false);
+      setGroupName('');
+      setGroupMemberIds([]);
+      if (group) openPrivateGroup(group);
+    } catch (e) { setError(e.message || 'Could not create group.'); }
+    finally { setBusy(false); }
+  };
+
+  const leaveCurrentGroup = async () => {
+    if (selectedType !== 'group' || !selected?.group_id || busy) return;
+    if (!window.confirm(`Leave ${selected.name}?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await leavePrivateGroup(selected.group_id);
+      await leaveThread();
+      await refreshPrivateGroups();
+    } catch (e) { setError(e.message || 'Could not leave group.'); }
+    finally { setBusy(false); }
+  };
+
+  const directUnread = conversations.reduce((sum, item) => sum + (item.conversation_id === conversationId && open ? 0 : Number(item.unread_count || 0)), 0);
+  const groupUnread = privateGroups.reduce((sum, item) => sum + (item.conversation_id === conversationId && open ? 0 : Number(item.unread_count || 0)), 0);
+  const unread = directUnread + groupUnread;
+  const currentTyping = Boolean(selectedType !== 'community' && conversationId && typingByConversation[conversationId]);
   const friendOnline = Boolean(selectedType === 'direct' && selected?.is_friend && selected?.is_online);
   const lastMine = [...messages].reverse().find(item => item.sender_id === session.user.id);
   const isRead = Boolean(lastMine?.created_at && otherReadAt && new Date(otherReadAt).getTime() >= new Date(lastMine.created_at).getTime());
@@ -565,11 +644,13 @@ export default function DirectMessaging({ session }) {
     : '';
   const conversationMeta = selectedType === 'community'
     ? `${Number(selected?.member_count || 0).toLocaleString()} members`
-    : currentTyping
-      ? 'typing…'
-      : friendOnline
-        ? 'Online'
-        : lastSeen || (isRead ? 'Read' : lastMine ? 'Sent' : '');
+    : selectedType === 'group'
+      ? (currentTyping ? 'typing…' : `${Number(selected?.member_count || 0).toLocaleString()} members`)
+      : currentTyping
+        ? 'typing…'
+        : friendOnline
+          ? 'Online'
+          : lastSeen || (isRead ? 'Read' : lastMine ? 'Sent' : '');
 
   const peopleConversations = useMemo(() => conversations.filter(item => Boolean(item.is_friend)), [conversations]);
   const messageRequests = useMemo(() => conversations.filter(item => !item.is_friend), [conversations]);
@@ -577,8 +658,9 @@ export default function DirectMessaging({ session }) {
 
   const forwardTargets = useMemo(() => [
     ...conversations.map(item => ({ type: 'direct', id: item.conversation_id, label: item.other_display_name || `@${item.other_username}`, subtitle: `@${item.other_username}`, avatar_url: item.other_avatar_url })),
+    ...privateGroups.map(group => ({ type: 'group', id: group.conversation_id, groupId: group.group_id, label: group.name, subtitle: `${group.member_count} members`, icon: '◎' })),
     ...communities.map(group => ({ type: 'community', id: group.id, label: group.name, subtitle: 'Community', icon: GROUP_ICONS[group.slug] || '◇' })),
-  ], [conversations, communities]);
+  ], [conversations, privateGroups, communities]);
 
   if (!session) return null;
 
@@ -597,7 +679,7 @@ export default function DirectMessaging({ session }) {
           </header>
           <div className="dm-sections">
             <button className={section === 'people' ? 'active' : ''} onClick={() => setSection('people')} type="button">People <span>{peopleConversations.length}</span></button>
-            <button className={section === 'groups' ? 'active' : ''} onClick={() => setSection('groups')} type="button">Groups</button>
+            <button className={section === 'groups' ? 'active' : ''} onClick={() => setSection('groups')} type="button">Groups <span>{privateGroups.length}</span></button>
             <button className={section === 'communities' ? 'active' : ''} onClick={() => setSection('communities')} type="button">Communities <span>{communities.length}</span></button>
             <button className={section === 'requests' ? 'active requests' : 'requests'} onClick={() => setSection('requests')} type="button">Requests {messageRequests.length > 0 && <span className={requestUnread > 0 ? 'request-alert' : ''}>{requestUnread > 0 ? (requestUnread > 9 ? '9+' : requestUnread) : messageRequests.length}</span>}</button>
           </div>
@@ -609,7 +691,7 @@ export default function DirectMessaging({ session }) {
             {!query.trim() && <div className="dm-list">{peopleConversations.length ? peopleConversations.map(item => <button className="dm-list-row" key={item.conversation_id} onClick={() => openExisting(item)} type="button"><Avatar person={item} /><span className="dm-list-copy"><strong>{item.other_display_name || item.other_username}{item.is_online && <i className="online-dot" />}</strong><small>{typingByConversation[item.conversation_id] ? 'typing…' : item.last_message || `@${item.other_username}`}</small></span><span className="dm-list-meta"><time>{formatTime(item.last_message_at)}</time>{Number(item.unread_count || 0) > 0 && <b>{Number(item.unread_count) > 9 ? '9+' : item.unread_count}</b>}</span></button>) : <div className="dm-empty"><h3>No friend chats yet.</h3><p>Search for someone by @username to start a private chat.</p></div>}</div>}
           </>}
 
-          {section === 'groups' && <div className="dm-empty"><h3>No private group chats yet.</h3><p>Private group conversations will live here separately from skill communities.</p></div>}
+          {section === 'groups' && <><div className="dm-section-toolbar"><div><strong>Private groups</strong><small>Chat with up to 20 friends.</small></div><button className="primary small" onClick={openCreateGroup} type="button">+ New group</button></div><div className="dm-list">{privateGroups.length ? privateGroups.map(group => <button className="dm-list-row" key={group.group_id} onClick={() => openPrivateGroup(group)} type="button"><span className="dm-community-icon private">◎</span><span className="dm-list-copy"><strong>{group.name}</strong><small>{typingByConversation[group.conversation_id] ? 'typing…' : group.last_message || `${group.member_count} members`}</small></span><span className="dm-list-meta"><time>{formatTime(group.last_message_at)}</time>{Number(group.unread_count || 0) > 0 && <b>{Number(group.unread_count) > 9 ? '9+' : group.unread_count}</b>}</span></button>) : <div className="dm-empty"><h3>No private groups yet.</h3><p>Create one with your friends and it will stay separate from Community chats.</p><button className="primary small" onClick={openCreateGroup} type="button">Create your first group</button></div>}</div></>}
 
           {section === 'communities' && <div className="dm-list">{communities.length ? communities.map(group => <button className="dm-list-row" key={group.id} onClick={() => openCommunity(group)} type="button"><span className="dm-community-icon">{GROUP_ICONS[group.slug] || '◇'}</span><span className="dm-list-copy"><strong>{group.name}</strong><small>{Number(group.member_count || 0).toLocaleString()} members · Community</small></span></button>) : <div className="dm-empty"><h3>No joined communities.</h3><p>Join a skill community and its chat will appear here automatically.</p></div>}</div>}
 
@@ -619,7 +701,9 @@ export default function DirectMessaging({ session }) {
           <header className="dm-thread-header">
             <button className="dm-back" onClick={leaveThread} type="button" aria-label="Back">←</button>
             {selectedType === 'direct' ? <button className="dm-thread-identity" onClick={() => openProfile(selected)} type="button"><Avatar person={selected} large /><span><strong>{selected.display_name || selected.username}</strong><small>@{selected.username}</small><em>{conversationMeta}</em></span>{selected.is_friend && <i className={`thread-online ${friendOnline ? 'on' : ''}`} />}</button>
+            : selectedType === 'group' ? <div className="dm-thread-identity"><span className="dm-community-icon private">◎</span><span><strong>{selected.name}</strong><small>Private group</small><em>{conversationMeta}</em></span></div>
             : <div className="dm-thread-identity"><span className="dm-community-icon">{GROUP_ICONS[selected.slug] || '◇'}</span><span><strong>{selected.name}</strong><small>Community</small><em>{conversationMeta}</em></span></div>}
+            {selectedType === 'group' && <button className="dm-leave-group" onClick={leaveCurrentGroup} disabled={busy} type="button">Leave</button>}
             <button className="dm-close" onClick={closeMessenger} type="button" aria-label="Close">×</button>
           </header>
           {error && <div className="dm-error">{error}</div>}
@@ -652,8 +736,10 @@ export default function DirectMessaging({ session }) {
             <div ref={endRef} />
           </div>
           {replyTo && <div className="dm-reply-bar"><div><span>Replying to @{replyTo.username || 'member'}</span><small>{replyTo.body}</small></div><button onClick={() => setReplyTo(null)} type="button">×</button></div>}
-          <form className="dm-composer" onSubmit={send}><input value={body} maxLength={selectedType === 'community' ? 2000 : 5000} onChange={handleBody} placeholder={selectedType === 'community' ? `Message ${selected.name}…` : `Message @${selected.username}…`} /><button className="primary" disabled={!body.trim() || busy} type="submit">Send</button></form>
+          <form className="dm-composer" onSubmit={send}><input value={body} maxLength={selectedType === 'community' ? 2000 : 5000} onChange={handleBody} placeholder={selectedType === 'community' ? `Message ${selected.name}…` : selectedType === 'group' ? `Message ${selected.name}…` : `Message @${selected.username}…`} /><button className="primary" disabled={!body.trim() || busy} type="submit">Send</button></form>
         </>}
+
+        {createGroupOpen && <div className="dm-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setCreateGroupOpen(false); }}><div className="dm-modal dm-create-group"><header><div><div className="eyebrow">PRIVATE GROUP</div><h3>New group</h3></div><button onClick={() => setCreateGroupOpen(false)} type="button">×</button></header><label className="dm-group-name"><span>Group name</span><input value={groupName} maxLength={80} onChange={event => setGroupName(event.target.value)} placeholder="Project crew" /></label><div className="dm-group-picker-head"><strong>Choose friends</strong><small>{groupMemberIds.length}/19 selected</small></div><div className="dm-group-friends">{groupFriends.length ? groupFriends.map(friend => { const id = friend.id || friend.user_id; const checked = groupMemberIds.includes(id); return <button className={checked ? 'selected' : ''} key={id} type="button" onClick={() => toggleGroupFriend(id)}><Avatar person={friend} /><span><strong>{friend.display_name || friend.username}</strong><small>@{friend.username}</small></span><i>{checked ? '✓' : '+'}</i></button>; }) : <div className="dm-empty compact"><p>Add friends first, then you can create a private group with them.</p></div>}</div><div className="dm-modal-actions"><button className="secondary" type="button" onClick={() => setCreateGroupOpen(false)}>Cancel</button><button className="primary" type="button" onClick={createGroup} disabled={busy || groupName.trim().length < 2 || !groupMemberIds.length}>{busy ? 'Creating…' : 'Create group'}</button></div></div></div>}
 
         {forwardItem && <div className="dm-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setForwardItem(null); }}><div className="dm-modal"><header><div><div className="eyebrow">FORWARD</div><h3>Send to…</h3></div><button onClick={() => setForwardItem(null)} type="button">×</button></header><div className="dm-forward-preview">{forwardItem.body}</div><div className="dm-forward-list">{forwardTargets.map(target => <button key={`${target.type}-${target.id}`} onClick={() => forward(target)} type="button">{target.avatar_url ? <Avatar person={{ avatar_url: target.avatar_url, display_name: target.label }} /> : target.icon ? <span className="dm-community-icon">{target.icon}</span> : <Avatar person={{ display_name: target.label }} />}<span><strong>{target.label}</strong><small>{target.subtitle}</small></span></button>)}</div></div></div>}
 
