@@ -10,6 +10,13 @@ import {
 } from '../data/serviceCategories';
 import './ExploreDeals.css';
 
+const SERVICE_TYPE_LABELS = {
+  deliverable: 'Deliverable',
+  session: 'Live session',
+  managed: 'Managed service',
+  audit: 'Audit & consultation',
+};
+
 function initialsFor(name = 'Favourit seller') {
   return String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'FV';
 }
@@ -30,10 +37,13 @@ function DealCard({ deal, onOpen, favorite, onFavorite }) {
   const category = deal._category || resolveServiceCategory(deal.category);
   const family = deal._family || getServiceFamily(deal.category);
   const accent = deal.accent || initialsFor(deal.seller);
-  return <article className="explore-deal-card">
+  const packageCount = Array.isArray(deal.packages) && deal.packages.length ? deal.packages.length : 1;
+  const serviceType = SERVICE_TYPE_LABELS[deal.serviceType] || SERVICE_TYPE_LABELS.deliverable;
+  return <article className={`explore-deal-card ${deal.sample ? 'is-sample' : ''}`}>
     <button className="explore-deal-open" type="button" onClick={() => onOpen(deal)}>
       <div className="explore-deal-art" data-accent={accent}>
         <span className="explore-deal-category">{category?.label || deal.category || 'Service'}</span>
+        <span className="explore-deal-badges"><small>{serviceType}</small>{packageCount > 1 && <small>{packageCount} packages</small>}{deal.sample && <small className="sample">Sample</small>}</span>
       </div>
       <div className="explore-deal-body">
         <div className="explore-deal-seller">
@@ -45,7 +55,9 @@ function DealCard({ deal, onOpen, favorite, onFavorite }) {
         <div className="explore-deal-meta"><span><small>Starting at</small><strong>{formatFav(deal.price * 1000000)} FAV</strong></span><small>{Number(deal.reviews || 0)} reviews</small></div>
       </div>
     </button>
-    <button aria-label={favorite ? 'Unlike deal' : 'Like deal'} title={favorite ? 'Unlike deal' : 'Like deal'} className={favorite ? 'favorite active' : 'favorite'} type="button" onClick={() => onFavorite(deal.id)}>{favorite ? '♥' : '♡'}</button>
+    {deal.sample
+      ? <span className="explore-sample-mark" title="Example listing shown until real services are published">Preview</span>
+      : <button aria-label={favorite ? 'Unlike deal' : 'Like deal'} title={favorite ? 'Unlike deal' : 'Like deal'} className={favorite ? 'favorite active' : 'favorite'} type="button" onClick={() => onFavorite(deal.id)}>{favorite ? '♥' : '♡'}</button>}
   </article>;
 }
 
@@ -80,7 +92,7 @@ export default function ExploreDealsPage({ query, setQuery, onOpen, onCreate, de
       if (rating !== 'any' && Number(deal.rating || 0) < Number(rating)) return false;
       if (price !== 'any' && Number(deal.price || 0) > Number(price)) return false;
       if (!term) return true;
-      const haystack = [deal.title, deal.description, deal.seller, serviceSearchText(deal.category)].filter(Boolean).join(' ').toLowerCase();
+      const haystack = [deal.title, deal.description, deal.seller, SERVICE_TYPE_LABELS[deal.serviceType], serviceSearchText(deal.category)].filter(Boolean).join(' ').toLowerCase();
       return haystack.includes(term);
     });
     const sorted = [...result];
