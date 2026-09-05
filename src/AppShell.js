@@ -4,7 +4,9 @@ import AuthGate from './components/AuthGate';
 import ActivityCenter from './components/ActivityCenter';
 import FavouritLoader from './components/FavouritLoader';
 import AdminPanel from './components/AdminPanel';
+import AdminOperations from './components/AdminOperations';
 import AdminMessageReports from './components/AdminMessageReports';
+import MiddlemanPanel from './components/MiddlemanPanel';
 import UsernameGate from './components/UsernameGate';
 import UsernameManager from './components/UsernameManager';
 import DirectMessagingV2 from './components/DirectMessagingV2';
@@ -32,8 +34,16 @@ function withTimeout(promise, ms, message = 'Request timed out. Please try again
   return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
 }
 
+function normalizedPath() {
+  return window.location.pathname.replace(/\/+$/, '') || '/';
+}
+
 function isAdminPanelPath() {
-  return window.location.pathname.replace(/\/+$/, '') === '/adminpanel';
+  return normalizedPath() === '/adminpanel';
+}
+
+function isMiddlemanPanelPath() {
+  return normalizedPath() === '/middleman';
 }
 
 function usernameCacheKey(userId) {
@@ -55,6 +65,8 @@ export default function AppShell() {
   const [rewardMessage, setRewardMessage] = useState('');
   const sessionUserRef = useRef(null);
   const adminPath = isAdminPanelPath();
+  const middlemanPath = isMiddlemanPanelPath();
+  const staffPath = adminPath || middlemanPath;
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined;
@@ -127,7 +139,7 @@ export default function AppShell() {
         if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
       }
 
-      if (!adminPath) {
+      if (!staffPath) {
         try {
           const reward = await withTimeout(claimDailyReward(), REWARD_TIMEOUT_MS, 'Daily reward timed out.');
           if (mounted && version === loadVersion && reward?.claimed) {
@@ -194,10 +206,10 @@ export default function AppShell() {
       loadVersion += 1;
       listener.subscription.unsubscribe();
     };
-  }, [adminPath]);
+  }, [staffPath]);
 
   useEffect(() => {
-    if (!session?.user?.id || !supabase || adminPath) return undefined;
+    if (!session?.user?.id || !supabase || staffPath) return undefined;
     let active = true;
 
     const setPresence = async online => {
@@ -220,7 +232,7 @@ export default function AppShell() {
       window.removeEventListener('beforeunload', onUnload);
       setPresence(false);
     };
-  }, [session?.user?.id, adminPath]);
+  }, [session?.user?.id, staffPath]);
 
   if (!isSupabaseConfigured) {
     return <div className="app-loading"><div><div className="logo"><span>Favour</span><i>it</i></div><h2>Connect your Favourit backend</h2><p>Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to the environment before launching.</p></div></div>;
@@ -231,7 +243,15 @@ export default function AppShell() {
   if (!uiReady) return <FavouritLoader title="Connecting to Favourit" subtitle="Checking your secure account…" />;
 
   if (adminPath) {
-    return <><AdminPanel /><main style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px 48px' }}><AdminMessageReports /></main></>;
+    return <>
+      <AdminPanel />
+      <AdminOperations />
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px 48px' }}><AdminMessageReports /></main>
+    </>;
+  }
+
+  if (middlemanPath) {
+    return <><MiddlemanPanel /><PublicProfileHost session={session} /></>;
   }
 
   const pending = getPendingOnboarding();
