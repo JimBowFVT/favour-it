@@ -332,7 +332,7 @@ export default function DirectMessaging({ session }) {
       setSelectedType('direct');
       setConversationId(id);
       conversationRef.current = id;
-      setSection('people');
+      setSection(row?.is_friend ? 'people' : 'requests');
       setQuery('');
       setResults([]);
       setOpen(true);
@@ -356,7 +356,7 @@ export default function DirectMessaging({ session }) {
     setSelectedType('direct');
     setConversationId(item.conversation_id);
     conversationRef.current = item.conversation_id;
-    setSection('people');
+    setSection(item.is_friend ? 'people' : 'requests');
     setMenuId(null);
     setOpen(true);
   };
@@ -563,6 +563,10 @@ export default function DirectMessaging({ session }) {
         ? 'Online'
         : lastSeen || (isRead ? 'Read' : lastMine ? 'Sent' : '');
 
+  const peopleConversations = useMemo(() => conversations.filter(item => Boolean(item.is_friend)), [conversations]);
+  const messageRequests = useMemo(() => conversations.filter(item => !item.is_friend), [conversations]);
+  const requestUnread = useMemo(() => messageRequests.reduce((sum, item) => sum + Number(item.unread_count || 0), 0), [messageRequests]);
+
   const forwardTargets = useMemo(() => [
     ...conversations.map(item => ({ type: 'direct', id: item.conversation_id, label: item.other_display_name || `@${item.other_username}`, subtitle: `@${item.other_username}`, avatar_url: item.other_avatar_url })),
     ...communities.map(group => ({ type: 'community', id: group.id, label: group.name, subtitle: 'Community', icon: GROUP_ICONS[group.slug] || '◇' })),
@@ -580,25 +584,28 @@ export default function DirectMessaging({ session }) {
       <section className={`dm-panel ${selected ? 'is-thread' : 'is-inbox'}`}>
         {!selected ? <>
           <header className="dm-header">
-            <div><div className="eyebrow">FAVOURIT</div><h2>Messages</h2><p>People, group chats and your communities.</p></div>
+            <div><div className="eyebrow">FAVOURIT</div><h2>Messages</h2><p>People, groups, communities and message requests.</p></div>
             <button className="dm-close" onClick={closeMessenger} type="button" aria-label="Close">×</button>
           </header>
           <div className="dm-sections">
-            <button className={section === 'people' ? 'active' : ''} onClick={() => setSection('people')} type="button">People <span>{conversations.length}</span></button>
+            <button className={section === 'people' ? 'active' : ''} onClick={() => setSection('people')} type="button">People <span>{peopleConversations.length}</span></button>
             <button className={section === 'groups' ? 'active' : ''} onClick={() => setSection('groups')} type="button">Groups</button>
             <button className={section === 'communities' ? 'active' : ''} onClick={() => setSection('communities')} type="button">Communities <span>{communities.length}</span></button>
+            <button className={section === 'requests' ? 'active requests' : 'requests'} onClick={() => setSection('requests')} type="button">Requests {messageRequests.length > 0 && <span className={requestUnread > 0 ? 'request-alert' : ''}>{requestUnread > 0 ? (requestUnread > 9 ? '9+' : requestUnread) : messageRequests.length}</span>}</button>
           </div>
           {error && <div className="dm-error">{error}</div>}
 
           {section === 'people' && <>
             <label className="dm-search"><span>⌕</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search @username…" /></label>
             {query.trim() && <div className="dm-search-results">{results.map(person => <button key={person.user_id || person.id || person.username} onClick={() => openDirect(person)} type="button"><Avatar person={person} /><span className="dm-list-copy"><strong>{person.display_name || person.username}</strong><small>@{person.username}</small></span></button>)}</div>}
-            {!query.trim() && <div className="dm-list">{conversations.length ? conversations.map(item => <button className="dm-list-row" key={item.conversation_id} onClick={() => openExisting(item)} type="button"><Avatar person={item} /><span className="dm-list-copy"><strong>{item.other_display_name || item.other_username}{item.is_friend && item.is_online && <i className="online-dot" />}</strong><small>{typingByConversation[item.conversation_id] ? 'typing…' : item.last_message || `@${item.other_username}`}</small></span><span className="dm-list-meta"><time>{formatTime(item.last_message_at)}</time>{Number(item.unread_count || 0) > 0 && <b>{Number(item.unread_count) > 9 ? '9+' : item.unread_count}</b>}</span></button>) : <div className="dm-empty"><h3>No conversations yet.</h3><p>Search for someone by @username to start a private chat.</p></div>}</div>}
+            {!query.trim() && <div className="dm-list">{peopleConversations.length ? peopleConversations.map(item => <button className="dm-list-row" key={item.conversation_id} onClick={() => openExisting(item)} type="button"><Avatar person={item} /><span className="dm-list-copy"><strong>{item.other_display_name || item.other_username}{item.is_online && <i className="online-dot" />}</strong><small>{typingByConversation[item.conversation_id] ? 'typing…' : item.last_message || `@${item.other_username}`}</small></span><span className="dm-list-meta"><time>{formatTime(item.last_message_at)}</time>{Number(item.unread_count || 0) > 0 && <b>{Number(item.unread_count) > 9 ? '9+' : item.unread_count}</b>}</span></button>) : <div className="dm-empty"><h3>No friend chats yet.</h3><p>Search for someone by @username to start a private chat.</p></div>}</div>}
           </>}
 
           {section === 'groups' && <div className="dm-empty"><h3>No private group chats yet.</h3><p>Private group conversations will live here separately from skill communities.</p></div>}
 
           {section === 'communities' && <div className="dm-list">{communities.length ? communities.map(group => <button className="dm-list-row" key={group.id} onClick={() => openCommunity(group)} type="button"><span className="dm-community-icon">{GROUP_ICONS[group.slug] || '◇'}</span><span className="dm-list-copy"><strong>{group.name}</strong><small>{Number(group.member_count || 0).toLocaleString()} members · Community</small></span></button>) : <div className="dm-empty"><h3>No joined communities.</h3><p>Join a skill community and its chat will appear here automatically.</p></div>}</div>}
+
+          {section === 'requests' && <div className="dm-list dm-request-list">{messageRequests.length ? messageRequests.map(item => <button className="dm-list-row" key={item.conversation_id} onClick={() => openExisting(item)} type="button"><Avatar person={item} /><span className="dm-list-copy"><strong>{item.other_display_name || item.other_username}</strong><small>{typingByConversation[item.conversation_id] ? 'typing…' : item.last_message || `Message request from @${item.other_username}`}</small></span><span className="dm-list-meta"><time>{formatTime(item.last_message_at)}</time>{Number(item.unread_count || 0) > 0 && <b>{Number(item.unread_count) > 9 ? '9+' : item.unread_count}</b>}</span></button>) : <div className="dm-empty"><h3>No message requests.</h3><p>Chats with people outside your friends list will appear here.</p></div>}</div>}
           </>
         : <>
           <header className="dm-thread-header">
