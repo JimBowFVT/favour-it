@@ -10,6 +10,10 @@ const SERVICE_TYPE_COPY = {
   audit: { label: 'Audit & consultation', note: 'Analysis, recommendations and expert guidance.' },
 };
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
 function initialsFor(name = 'Favourit seller') {
   return String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'FV';
 }
@@ -55,11 +59,10 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
   useEffect(() => {
     setDetail(deal);
     setSelectedTier(fallbackPackages(deal)[0]?.tier || 'basic');
-    const id = String(deal?.id || '');
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return undefined;
+    if (!isUuid(deal?.id)) return undefined;
     let active = true;
     setLoading(true);
-    getDealById(id).then(next => {
+    getDealById(deal.id).then(next => {
       if (!active || !next) return;
       setDetail(next);
       const available = fallbackPackages(next);
@@ -73,7 +76,8 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
   const reviews = Array.isArray(detail?.reviewItems) ? detail.reviewItems : [];
   const portfolio = Array.isArray(detail?.portfolio) ? detail.portfolio : [];
   const faqs = Array.isArray(detail?.faqs) ? detail.faqs : [];
-  const canMessage = Boolean(detail?.sellerUsername);
+  const purchasable = isUuid(detail?.id) && !detail?.sample;
+  const canMessage = purchasable && Boolean(detail?.sellerUsername);
 
   const messageSeller = () => {
     if (!canMessage) return;
@@ -96,7 +100,7 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
         </div>
 
         <div className="deal-detail-copy">
-          <div className="deal-detail-kicker"><span>{serviceType.label}</span>{loading && <small>Refreshing deal…</small>}</div>
+          <div className="deal-detail-kicker"><span>{serviceType.label}</span>{detail.sample && <small>Explore sample listing</small>}{loading && <small>Refreshing deal…</small>}</div>
           <h1>{detail.title}</h1>
           <div className="deal-seller-card">
             <button type="button" className="deal-seller-profile" onClick={openSeller} disabled={!detail.sellerUsername}>
@@ -105,7 +109,7 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
             </button>
             <div className="deal-seller-stats"><span><b>{detail.rating ? `★ ${detail.rating}` : 'New'}</b><small>{detail.reviews || 0} reviews</small></span><span><b>{detail.completedOrders || 0}</b><small>completed</small></span></div>
             <button type="button" className="secondary deal-message-seller" disabled={!canMessage} onClick={messageSeller}>Message seller</button>
-            <button type="button" className={`favorite-detail ${favorite ? 'active' : ''}`} aria-pressed={favorite} onClick={() => onFavorite(detail.id)}>{favorite ? '♥ Saved' : '♡ Save'}</button>
+            <button type="button" className={`favorite-detail ${favorite ? 'active' : ''}`} disabled={!purchasable} aria-pressed={favorite} onClick={() => onFavorite(detail.id)}>{detail.sample ? 'Sample' : favorite ? '♥ Saved' : '♡ Save'}</button>
           </div>
 
           <section className="deal-detail-section"><h2>About this service</h2><p>{detail.description || 'The seller has not added a longer description yet.'}</p><div className="deal-service-type-note"><b>{serviceType.label}</b><span>{serviceType.note}</span></div></section>
@@ -131,7 +135,7 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
             <span><b>↻</b><strong>{selected?.revisions ?? 0}</strong><small>{Number(selected?.revisions) === 1 ? 'revision' : 'revisions'}</small></span>
             {selected?.sessionMinutes && <span><b>◷</b><strong>{selected.sessionMinutes} min</strong><small>session</small></span>}
           </div>
-          <button className="primary full" type="button" disabled={busy} onClick={() => onBuy(selected?.tier || 'basic')}>{busy ? 'Funding escrow…' : `Continue — ${formatFav(packagePrice(selected))} FAV`}</button>
+          <button className="primary full" type="button" disabled={busy || !purchasable} onClick={() => onBuy(selected?.tier || 'basic')}>{!purchasable ? 'Sample listing — publish a real deal to order' : busy ? 'Funding escrow…' : `Continue — ${formatFav(packagePrice(selected))} FAV`}</button>
           <button className="secondary full" type="button" disabled={!canMessage} onClick={messageSeller}>Ask the seller first</button>
           <div className="balance-note">Your balance: <strong>{formatFav(fav)} FAV</strong></div>
           <div className="deal-protection"><span>✓ Payment held in escrow</span><span>✓ Package captured on the order</span><span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
