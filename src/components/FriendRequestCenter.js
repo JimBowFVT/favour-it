@@ -3,7 +3,11 @@ import { supabase } from '../lib/supabase';
 import { getMySocialGraph } from '../lib/social';
 import './FriendRequestCenter.css';
 
-function openRequests() {
+function openRequester(toast) {
+  if (toast?.userId || toast?.username) {
+    window.dispatchEvent(new CustomEvent('favourit:open-profile', { detail: { userId: toast.userId || null, username: toast.username || null } }));
+    return;
+  }
   window.dispatchEvent(new CustomEvent('favourit:open-community-requests'));
   const communityNav = [...document.querySelectorAll('.topbar nav button')]
     .find(node => node.textContent?.trim() === 'Community');
@@ -29,6 +33,8 @@ export default function FriendRequestCenter() {
         if (newest) {
           setToast({
             id: newest.id,
+            userId: newest.user_id || null,
+            username: newest.username || null,
             title: 'New friend request',
             body: `${newest.display_name || `@${newest.username || 'Someone'}`} sent you a friend request.`,
           });
@@ -62,8 +68,11 @@ export default function FriendRequestCenter() {
             if (!row || row.user_id !== userId || row.type !== 'friend_request') return;
             if (seen.current.has(row.id)) return;
             seen.current.add(row.id);
+            const details = row.data || {};
             setToast({
               id: row.id,
+              userId: details.user_id || null,
+              username: details.username || null,
               title: row.title || 'New friend request',
               body: row.body || 'Someone sent you a friend request.',
             });
@@ -92,7 +101,7 @@ export default function FriendRequestCenter() {
   if (!toast) return null;
 
   return (
-    <button className="friend-request-toast" type="button" onClick={() => { openRequests(); setToast(null); }}>
+    <button className="friend-request-toast" type="button" onClick={() => { openRequester(toast); setToast(null); }}>
       <span className="friend-request-toast-avatar">♡</span>
       <span><strong>{toast.title}</strong><small>{toast.body}</small></span>
     </button>
