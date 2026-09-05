@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getDealById } from '../lib/deals';
 import { formatFav } from '../lib/wallet';
+import { formatPercentFromBps } from '../lib/economy';
+import { calculateBpsFeeUnits } from '../data/economy';
 import './DealDetailPage.css';
 
 const SERVICE_TYPE_COPY = {
@@ -50,7 +52,7 @@ function ReviewCard({ review }) {
   </article>;
 }
 
-export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorite, onFavorite }) {
+export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorite, onFavorite, buyerFeeBps = 300 }) {
   const [detail, setDetail] = useState(deal);
   const [loading, setLoading] = useState(false);
   const packages = useMemo(() => fallbackPackages(detail), [detail]);
@@ -72,6 +74,9 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
   }, [deal]);
 
   const selected = packages.find(item => item.tier === selectedTier) || packages[0];
+  const servicePriceMicro = packagePrice(selected);
+  const buyerFeeMicro = calculateBpsFeeUnits(servicePriceMicro, buyerFeeBps);
+  const buyerTotalMicro = servicePriceMicro + buyerFeeMicro;
   const serviceType = SERVICE_TYPE_COPY[detail?.serviceType] || SERVICE_TYPE_COPY.deliverable;
   const reviews = Array.isArray(detail?.reviewItems) ? detail.reviewItems : [];
   const portfolio = Array.isArray(detail?.portfolio) ? detail.portfolio : [];
@@ -113,13 +118,9 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
           </div>
 
           <section className="deal-detail-section"><h2>About this service</h2><p>{detail.description || 'The seller has not added a longer description yet.'}</p><div className="deal-service-type-note"><b>{serviceType.label}</b><span>{serviceType.note}</span></div></section>
-
           <section className="deal-detail-section"><h2>What the seller needs from you</h2>{detail.buyerRequirements ? <p className="deal-requirements">{detail.buyerRequirements}</p> : <p className="deal-muted">The seller will confirm any required information in Messages after the order starts.</p>}</section>
-
           {portfolio.length > 0 && <section className="deal-detail-section"><h2>Portfolio</h2><div className="deal-portfolio-grid">{portfolio.map((item, index) => <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer"><span>Sample {index + 1}</span><strong>{item.title}</strong><small>Open work sample ↗</small></a>)}</div></section>}
-
           <section className="deal-detail-section"><div className="deal-section-heading"><h2>Seller reputation</h2><span>{detail.reviews || 0} reviews</span></div>{reviews.length ? <div className="deal-reviews-grid">{reviews.map(review => <ReviewCard key={review.id} review={review} />)}</div> : <div className="deal-empty-block"><strong>No written reviews yet.</strong><span>New sellers can still earn trust through protected Favourit orders.</span></div>}</section>
-
           {faqs.length > 0 && <section className="deal-detail-section"><h2>Frequently asked questions</h2><div className="deal-faq-list">{faqs.map((item, index) => <details key={`${item.question}-${index}`}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>}
         </div>
       </div>
@@ -128,17 +129,22 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
         <div className="deal-package-tabs">{packages.map(item => <button type="button" key={item.tier} className={selected?.tier === item.tier ? 'active' : ''} onClick={() => setSelectedTier(item.tier)}>{item.title || item.tier}</button>)}</div>
         <div className="deal-package-body">
           <div className="eyebrow">{String(selected?.tier || 'basic').toUpperCase()} PACKAGE</div>
-          <h2>{formatFav(packagePrice(selected))} <em>FAV</em></h2>
+          <h2>{formatFav(servicePriceMicro)} <em>FAV</em></h2>
           <p>{selected?.description || 'A clear service package protected by Favourit escrow.'}</p>
           <div className="deal-package-facts">
             <span><b>⌁</b><strong>{selected?.deliveryDays || 1} day{Number(selected?.deliveryDays) === 1 ? '' : 's'}</strong><small>{detail.serviceType === 'session' ? 'to schedule' : 'delivery'}</small></span>
             <span><b>↻</b><strong>{selected?.revisions ?? 0}</strong><small>{Number(selected?.revisions) === 1 ? 'revision' : 'revisions'}</small></span>
             {selected?.sessionMinutes && <span><b>◷</b><strong>{selected.sessionMinutes} min</strong><small>session</small></span>}
           </div>
-          <button className="primary full" type="button" disabled={busy || !purchasable} onClick={() => onBuy(selected?.tier || 'basic')}>{!purchasable ? 'Sample listing — publish a real deal to order' : busy ? 'Funding escrow…' : `Continue — ${formatFav(packagePrice(selected))} FAV`}</button>
+          <div className="deal-checkout-fees" aria-label="Order total">
+            <span><small>Service price</small><b>{formatFav(servicePriceMicro)} FAV</b></span>
+            <span><small>Buyer marketplace fee · {formatPercentFromBps(buyerFeeBps)}</small><b>{formatFav(buyerFeeMicro)} FAV</b></span>
+            <span className="deal-checkout-total"><small>Total held in escrow</small><b>{formatFav(buyerTotalMicro)} FAV</b></span>
+          </div>
+          <button className="primary full" type="button" disabled={busy || !purchasable} onClick={() => onBuy(selected?.tier || 'basic')}>{!purchasable ? 'Sample listing — publish a real deal to order' : busy ? 'Funding escrow…' : `Continue — ${formatFav(buyerTotalMicro)} FAV`}</button>
           <button className="secondary full" type="button" disabled={!canMessage} onClick={messageSeller}>Ask the seller first</button>
           <div className="balance-note">Your balance: <strong>{formatFav(fav)} FAV</strong></div>
-          <div className="deal-protection"><span>✓ Payment held in escrow</span><span>✓ Package captured on the order</span><span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
+          <div className="deal-protection"><span>✓ Payment + buyer fee held in escrow</span><span>✓ Package captured on the order</span><span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
         </div>
       </aside>
     </div>
