@@ -5,6 +5,10 @@ const MICRO_FAV = 1_000_000;
 const normalizeOrder = (row) => {
   if (!row) return null;
   const snapshot = row.package_snapshot && typeof row.package_snapshot === 'object' ? row.package_snapshot : {};
+  const amountMicro = Number(row.amount_fav || row.amount || 0);
+  const sellerFeeMicro = Number(row.seller_fee_fav ?? row.fee_fav ?? row.fee ?? 0);
+  const buyerFeeMicro = Number(row.buyer_fee_fav || 0);
+  const buyerTotalMicro = Number(row.buyer_total_fav || (amountMicro + buyerFeeMicro));
   return {
     id: row.id,
     title: row.title || snapshot.deal_title || 'Favourit order',
@@ -12,9 +16,11 @@ const normalizeOrder = (row) => {
     sellerId: row.seller_id,
     buyerId: row.buyer_id,
     dealId: row.deal_id,
-    category: row.category || snapshot.deal_category || 'Service',
-    amount: Number(row.amount_fav || row.amount || 0) / MICRO_FAV,
-    fee: Number(row.fee_fav || row.fee || 0) / MICRO_FAV,
+    amount: amountMicro / MICRO_FAV,
+    fee: sellerFeeMicro / MICRO_FAV,
+    sellerFee: sellerFeeMicro / MICRO_FAV,
+    buyerFee: buyerFeeMicro / MICRO_FAV,
+    buyerTotal: buyerTotalMicro / MICRO_FAV,
     status: row.status,
     packageTier: row.package_tier || snapshot.tier || 'basic',
     packageTitle: snapshot.title || 'Basic',
@@ -33,7 +39,7 @@ const normalizeOrder = (row) => {
 function throwOrderError(error, fallback) {
   const message = String(error?.message || '');
   if (/seller must deliver/i.test(message)) throw new Error('The seller must deliver the work before you can release the FAV.');
-  if (/insufficient FAV/i.test(message)) throw new Error('You do not have enough available FAV for this order.');
+  if (/insufficient FAV/i.test(message)) throw new Error('You do not have enough available FAV for this order and its buyer fee.');
   if (/selected package is not available/i.test(message)) throw new Error('That package is no longer available. Refresh the deal and choose another package.');
   throw new Error(message || fallback);
 }
@@ -66,7 +72,7 @@ export async function refundOrder(orderId) {
 export async function getMyOrders() {
   const { data, error } = await supabase
     .from('orders')
-    .select('id, buyer_id, seller_id, deal_id, amount_fav, fee_fav, status, package_tier, package_snapshot, created_at, updated_at, deals(title, category)')
+    .select('id, buyer_id, seller_id, deal_id, amount_fav, fee_fav, buyer_fee_fav, seller_fee_fav, buyer_total_fav, status, package_tier, package_snapshot, created_at, updated_at, deals(title, category)')
     .order('created_at', { ascending: false });
   if (error) throw error;
 
