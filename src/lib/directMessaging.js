@@ -35,6 +35,8 @@ export const sendDirectMessage = (conversationId, body = '', replyToMessageId = 
   p_deal_id: dealId || null,
 });
 
+export const acceptDirectMessageRequest = conversationId => call('accept_direct_message_request', { p_conversation_id: conversationId });
+export const declineDirectMessageRequest = conversationId => call('decline_direct_message_request', { p_conversation_id: conversationId });
 export const deleteOwnDirectMessage = messageId => call('delete_own_direct_message', { p_message_id: messageId });
 export const toggleDirectMessageStar = messageId => call('toggle_direct_message_star', { p_message_id: messageId });
 export const getMyStarredDirectMessages = () => call('get_my_starred_direct_messages');
