@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { normalizeLanguageCode } from '../data/languages';
 
 function requireClient() { if (!supabase) throw new Error('Favourit backend is not configured yet.'); }
 
@@ -29,4 +30,24 @@ export async function updateProfileBasics({ displayName, bio }) {
   if (cleanBio.length > 500) throw new Error('Bio must be 500 characters or less.');
   const { data, error } = await supabase.rpc('update_my_profile', { p_display_name: cleanName, p_bio: cleanBio });
   if (error) throw error; return data;
+}
+
+export async function getMyPreferredLanguage() {
+  requireClient();
+  const { data, error } = await supabase.rpc('get_my_preferred_language');
+  if (error) throw error;
+  return normalizeLanguageCode(data || 'en');
+}
+
+export async function updateMyPreferredLanguage(language) {
+  requireClient();
+  const value = normalizeLanguageCode(language);
+  const { data, error } = await supabase.rpc('update_my_preferred_language', { p_language: value });
+  if (error) throw error;
+  const saved = normalizeLanguageCode(data || value);
+  try {
+    localStorage.setItem('favourit_language', saved);
+    localStorage.setItem('favourit:language', saved);
+  } catch (_) {}
+  return saved;
 }
