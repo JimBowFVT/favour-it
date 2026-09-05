@@ -15,7 +15,12 @@ export const listCommunityGroups = () => call('list_public_community_groups');
 export const joinCommunityGroup = groupId => call('join_community_group', { p_group_id: groupId });
 export const leaveCommunityGroup = groupId => call('leave_community_group', { p_group_id: groupId });
 export const getCommunityGroupMessages = groupId => call('get_community_group_messages', { p_group_id: groupId });
-export const sendCommunityGroupMessage = (groupId, body) => call('send_community_group_message', { p_group_id: groupId, p_body: body });
+export const sendCommunityGroupMessage = (groupId, body, replyToMessageId = null) => replyToMessageId
+  ? call('send_community_group_message', { p_group_id: groupId, p_body: body, p_reply_to_message_id: replyToMessageId })
+  : call('send_community_group_message', { p_group_id: groupId, p_body: body });
+export const deleteOwnCommunityGroupMessage = messageId => call('delete_own_community_group_message', { p_message_id: messageId });
+export const toggleCommunityGroupMessageStar = messageId => call('toggle_community_group_message_star', { p_message_id: messageId });
+export const getMyStarredCommunityMessages = () => call('get_my_starred_community_messages');
 export const getCommunityGroupMembers = groupId => call('get_community_group_members', { p_group_id: groupId });
 export const reportCommunityGroupMessage = (messageId, reason, details = '') => call('report_community_group_message', { p_message_id: messageId, p_reason: reason, p_details: details });
 export const moderateCommunityGroupMessage = (messageId, action = 'delete', reason = '') => call('moderate_community_group_message', { p_message_id: messageId, p_action: action, p_reason: reason });
