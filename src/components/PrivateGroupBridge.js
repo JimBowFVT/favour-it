@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { getMySocialGraph } from '../lib/social';
@@ -49,6 +49,7 @@ export default function PrivateGroupBridge({ session }) {
   const [groups, setGroups] = useState([]);
   const [friends, setFriends] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [name, setName] = useState('');
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [friendSearch, setFriendSearch] = useState('');
@@ -58,9 +59,12 @@ export default function PrivateGroupBridge({ session }) {
   const [replyTo, setReplyTo] = useState(null);
   const [search, setSearch] = useState('');
   const [translations, setTranslations] = useState({});
+  const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [muteVersion, setMuteVersion] = useState(0);
+  const typingChannelRef = useRef(null);
+  const typingTimerRef = useRef(null);
 
   const refreshGroups = async () => {
     const rows = await getMyPrivateGroups();
@@ -125,16 +129,39 @@ export default function PrivateGroupBridge({ session }) {
   }, [chat?.conversation_id]);
 
   useEffect(() => {
+    if (!chat?.conversation_id || !session?.user?.id || !supabase) return undefined;
+    setTyping(false);
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    const channel = supabase.channel(`private-group-typing-${chat.conversation_id}`, { config: { broadcast: { self: false } } });
+    typingChannelRef.current = channel;
+    channel.on('broadcast', { event: 'typing' }, event => {
+      const payload = event?.payload || {};
+      if (payload.user_id === session.user.id || payload.conversation_id !== chat.conversation_id) return;
+      setTyping(true);
+      if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = window.setTimeout(() => setTyping(false), 5000);
+    }).subscribe();
+    return () => {
+      if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+      typingChannelRef.current = null;
+      setTyping(false);
+      try { supabase.removeChannel(channel); } catch (_) {}
+    };
+  }, [chat?.conversation_id, session?.user?.id]);
+
+  useEffect(() => {
     const handler = () => setMuteVersion(value => value + 1);
     window.addEventListener('favourit:mute-state-changed', handler);
     return () => window.removeEventListener('favourit:mute-state-changed', handler);
   }, []);
 
   useEffect(() => {
-    if (!chat && !createOpen) return undefined;
+    if (!chat && !createOpen && !infoOpen) return undefined;
     const onKeyDown = event => {
       if (event.key !== 'Escape') return;
-      if (createOpen) setCreateOpen(false);
+      if (infoOpen) setInfoOpen(false);
+      else if (createOpen) setCreateOpen(false);
       else if (chat) {
         setChat(null);
         setMessages([]);
@@ -144,7 +171,7 @@ export default function PrivateGroupBridge({ session }) {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [chat, createOpen]);
+  }, [chat, createOpen, infoOpen]);
 
   const groupUnread = useMemo(() => groups.reduce((sum, group) => {
     if (chat?.conversation_id === group.conversation_id) return sum;
@@ -161,6 +188,14 @@ export default function PrivateGroupBridge({ session }) {
     if (!term) return messages;
     return messages.filter(message => `${message.body || ''} ${message.username || ''} ${message.display_name || ''}`.toLowerCase().includes(term));
   }, [messages, search]);
+
+  const starredMessages = useMemo(() => messages.filter(message => !message.is_deleted && message.is_starred), [messages]);
+
+  const announceTyping = value => {
+    const channel = typingChannelRef.current;
+    if (!value.trim() || !channel || !chat?.conversation_id || !session?.user?.id) return;
+    channel.send({ type: 'broadcast', event: 'typing', payload: { conversation_id: chat.conversation_id, user_id: session.user.id, typing_at: Date.now() } }).catch(() => {});
+  };
 
   const openCreate = async () => {
     setError('');
@@ -239,6 +274,7 @@ export default function PrivateGroupBridge({ session }) {
     setBusy(true);
     try {
       await leavePrivateGroup(chat.group_id);
+      setInfoOpen(false);
       setChat(null);
       setMessages([]);
       await refreshGroups();
@@ -254,7 +290,7 @@ export default function PrivateGroupBridge({ session }) {
       <div><strong>Private groups</strong><small>Group chats with friends, separate from public Communities.</small></div>
       <button className="primary small" type="button" onClick={openCreate}>+ New group</button>
     </div>
-    {groups.length ? groups.map(group => <button className="private-group-row" type="button" key={group.group_id} onClick={() => { setError(''); setSearch(''); setChat(group); }}>
+    {groups.length ? groups.map(group => <button className="private-group-row" type="button" key={group.group_id} onClick={() => { setError(''); setSearch(''); setInfoOpen(false); setChat(group); }}>
       <span className="private-group-icon">{initials(group.name)}</span>
       <span className="dm-list-copy"><strong>{group.name}{muted(group.conversation_id) && <i className="private-group-muted">🔕</i>}</strong><small>{group.last_message || `${Number(group.member_count || 0)} members`}</small></span>
       <span className="dm-list-meta"><time>{time(group.last_message_at)}</time>{Number(group.unread_count || 0) > 0 && <b>{Number(group.unread_count) > 9 ? '9+' : group.unread_count}</b>}</span>
@@ -264,8 +300,9 @@ export default function PrivateGroupBridge({ session }) {
   const overlayPortal = panel ? createPortal(<>
     {chat && <section className="private-group-thread" aria-label={`${chat.name} private group chat`}>
       <header className="private-group-thread-header">
-        <button type="button" className="dm-back" onClick={() => { setChat(null); setMessages([]); setReplyTo(null); setSearch(''); }}>←</button>
-        <div className="private-group-thread-title"><span className="private-group-icon">{initials(chat.name)}</span><span><strong>{chat.name}</strong><small>Private group · {Number(chat.member_count || 0)} members</small></span></div>
+        <button type="button" className="dm-back" onClick={() => { setInfoOpen(false); setChat(null); setMessages([]); setReplyTo(null); setSearch(''); }}>←</button>
+        <div className="private-group-thread-title"><span className="private-group-icon">{initials(chat.name)}</span><span><strong>{chat.name}</strong><small>{typing ? 'typing…' : `Private group · ${Number(chat.member_count || 0)} members`}</small></span></div>
+        <button type="button" className="private-group-header-action" aria-label="Group details" title="Group details" onClick={() => setInfoOpen(true)}>ⓘ</button>
         <button type="button" className="private-group-header-action" onClick={() => { toggleMute(chat.conversation_id); setMuteVersion(value => value + 1); }}>{muted(chat.conversation_id) ? '🔕 Muted' : '🔔'}</button>
         <button type="button" className="private-group-header-action danger" onClick={leave} disabled={busy}>Leave</button>
       </header>
@@ -276,7 +313,7 @@ export default function PrivateGroupBridge({ session }) {
           const mine = message.sender_id === session.user.id;
           const canDelete = mine && !message.is_deleted && Date.now() - new Date(message.created_at).getTime() <= 15 * 60 * 1000;
           const translation = translations[message.id];
-          return <div className={`private-group-message ${mine ? 'mine' : ''} ${message.is_deleted ? 'deleted' : ''}`} key={message.id}>
+          return <div data-message-id={message.id} className={`private-group-message ${mine ? 'mine' : ''} ${message.is_deleted ? 'deleted' : ''}`} key={message.id}>
             {!mine && avatar(message)}
             <div className="private-group-bubble">
               <div className="private-group-message-head"><strong>{mine ? 'You' : `@${message.username || 'member'}`}</strong><time>{time(message.created_at)}</time>{message.is_starred && <span>★</span>}</div>
@@ -294,14 +331,28 @@ export default function PrivateGroupBridge({ session }) {
             </div>
           </div>;
         })}
+        {typing && !search && <div className="private-group-typing" aria-label="Someone is typing"><span /><span /><span /></div>}
         {!visibleMessages.length && <div className="private-groups-zero"><strong>{search ? 'No matching messages.' : 'Start the group conversation.'}</strong><span>{search ? 'Try another search.' : 'Only group members can see messages here.'}</span></div>}
       </div>
       {replyTo && <div className="private-group-reply-bar"><span>Replying to @{replyTo.username || 'member'} · {replyTo.body || 'Message'}</span><button type="button" onClick={() => setReplyTo(null)}>×</button></div>}
       <form className="private-group-composer" onSubmit={send}>
-        <input value={body} maxLength={5000} onChange={event => setBody(event.target.value)} placeholder={`Message ${chat.name}…`} />
+        <input value={body} maxLength={5000} onChange={event => { setBody(event.target.value); announceTyping(event.target.value); }} placeholder={`Message ${chat.name}…`} />
         <button className="primary" type="submit" disabled={!body.trim() || busy}>Send</button>
       </form>
     </section>}
+
+    {infoOpen && chat && <div className="private-group-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setInfoOpen(false); }}>
+      <section className="private-group-modal private-group-info-modal">
+        <header><div><div className="eyebrow">GROUP DETAILS</div><h3>{chat.name}</h3><p>Private group · {Number(chat.member_count || 0)} members</p></div><button type="button" onClick={() => setInfoOpen(false)}>×</button></header>
+        <div className="private-group-info-summary">
+          <div><strong>{messages.filter(message => !message.is_deleted).length}</strong><small>Messages</small></div>
+          <div><strong>{starredMessages.length}</strong><small>Starred</small></div>
+          <div><strong>{muted(chat.conversation_id) ? 'Off' : 'On'}</strong><small>Notifications</small></div>
+        </div>
+        <div className="private-group-info-section"><div className="private-group-info-heading"><strong>Starred messages</strong><span>{starredMessages.length}</span></div>{starredMessages.length ? starredMessages.slice().reverse().slice(0, 30).map(message => <button type="button" key={message.id} onClick={() => { setInfoOpen(false); window.setTimeout(() => document.querySelector(`.private-group-message[data-message-id="${message.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 40); }}><strong>{message.body || 'Starred message'}</strong><small>@{message.username || (message.sender_id === session.user.id ? 'you' : 'member')} · {time(message.created_at)}</small></button>) : <div className="private-groups-zero compact"><span>No starred messages yet.</span></div>}</div>
+        <footer><button className="secondary" type="button" onClick={() => { toggleMute(chat.conversation_id); setMuteVersion(value => value + 1); }}>{muted(chat.conversation_id) ? 'Unmute notifications' : 'Mute notifications'}</button><button className="secondary danger" type="button" onClick={leave} disabled={busy}>Leave group</button></footer>
+      </section>
+    </div>}
 
     {createOpen && <div className="private-group-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setCreateOpen(false); }}>
       <form className="private-group-modal" onSubmit={createGroup}>
