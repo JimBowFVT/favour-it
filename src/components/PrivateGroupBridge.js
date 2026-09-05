@@ -44,6 +44,8 @@ function avatar(person) {
 export default function PrivateGroupBridge({ session }) {
   const [host, setHost] = useState(null);
   const [panel, setPanel] = useState(null);
+  const [fabHost, setFabHost] = useState(null);
+  const [groupsTabHost, setGroupsTabHost] = useState(null);
   const [groups, setGroups] = useState([]);
   const [friends, setFriends] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -71,9 +73,11 @@ export default function PrivateGroupBridge({ session }) {
     const sync = () => {
       const root = document.querySelector('.dm-panel.is-inbox');
       const groupsButton = [...document.querySelectorAll('.dm-sections-v2 button')].find(button => String(button.textContent || '').trim().startsWith('Groups'));
+      setFabHost(document.querySelector('.dm-fab'));
+      setGroupsTabHost(groupsButton || null);
       const active = Boolean(root && groupsButton?.classList.contains('active'));
       if (!active) {
-        if (host) host.classList.remove('private-groups-host');
+        document.querySelectorAll('.private-groups-host').forEach(node => node.classList.remove('private-groups-host'));
         setHost(null);
         setPanel(root || null);
         return;
@@ -89,6 +93,8 @@ export default function PrivateGroupBridge({ session }) {
     return () => {
       observer.disconnect();
       document.querySelectorAll('.private-groups-host').forEach(node => node.classList.remove('private-groups-host'));
+      setFabHost(null);
+      setGroupsTabHost(null);
     };
   }, [session?.user?.id]);
 
@@ -123,6 +129,27 @@ export default function PrivateGroupBridge({ session }) {
     window.addEventListener('favourit:mute-state-changed', handler);
     return () => window.removeEventListener('favourit:mute-state-changed', handler);
   }, []);
+
+  useEffect(() => {
+    if (!chat && !createOpen) return undefined;
+    const onKeyDown = event => {
+      if (event.key !== 'Escape') return;
+      if (createOpen) setCreateOpen(false);
+      else if (chat) {
+        setChat(null);
+        setMessages([]);
+        setReplyTo(null);
+        setSearch('');
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [chat, createOpen]);
+
+  const groupUnread = useMemo(() => groups.reduce((sum, group) => {
+    if (chat?.conversation_id === group.conversation_id) return sum;
+    return sum + Number(group.unread_count || 0);
+  }, 0), [groups, chat?.conversation_id]);
 
   const filteredFriends = useMemo(() => {
     const term = friendSearch.trim().toLowerCase();
@@ -219,6 +246,9 @@ export default function PrivateGroupBridge({ session }) {
     finally { setBusy(false); }
   };
 
+  const fabPortal = fabHost && groupUnread > 0 ? createPortal(<b className="private-group-fab-unread" title={`${groupUnread} unread private group message${groupUnread === 1 ? '' : 's'}`}>G{groupUnread > 9 ? '9+' : groupUnread}</b>, fabHost) : null;
+  const tabPortal = groupsTabHost ? createPortal(<span className={`private-group-tab-count ${groupUnread > 0 ? 'unread' : ''}`} title={groupUnread > 0 ? `${groupUnread} unread private group message${groupUnread === 1 ? '' : 's'}` : `${groups.length} private group${groups.length === 1 ? '' : 's'}`}>{groupUnread > 0 ? (groupUnread > 99 ? '99+' : groupUnread) : groups.length}</span>, groupsTabHost) : null;
+
   const groupsPortal = host ? createPortal(<div className="private-groups-list">
     <div className="private-groups-toolbar">
       <div><strong>Private groups</strong><small>Group chats with friends, separate from public Communities.</small></div>
@@ -234,7 +264,7 @@ export default function PrivateGroupBridge({ session }) {
   const overlayPortal = panel ? createPortal(<>
     {chat && <section className="private-group-thread" aria-label={`${chat.name} private group chat`}>
       <header className="private-group-thread-header">
-        <button type="button" className="dm-back" onClick={() => { setChat(null); setMessages([]); setReplyTo(null); }}>←</button>
+        <button type="button" className="dm-back" onClick={() => { setChat(null); setMessages([]); setReplyTo(null); setSearch(''); }}>←</button>
         <div className="private-group-thread-title"><span className="private-group-icon">{initials(chat.name)}</span><span><strong>{chat.name}</strong><small>Private group · {Number(chat.member_count || 0)} members</small></span></div>
         <button type="button" className="private-group-header-action" onClick={() => { toggleMute(chat.conversation_id); setMuteVersion(value => value + 1); }}>{muted(chat.conversation_id) ? '🔕 Muted' : '🔔'}</button>
         <button type="button" className="private-group-header-action danger" onClick={leave} disabled={busy}>Leave</button>
@@ -293,5 +323,5 @@ export default function PrivateGroupBridge({ session }) {
     </div>}
   </>, panel) : null;
 
-  return <>{groupsPortal}{overlayPortal}</>;
+  return <>{fabPortal}{tabPortal}{groupsPortal}{overlayPortal}</>;
 }
