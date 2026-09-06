@@ -35,6 +35,16 @@ Deno.serve(async (req: Request) => {
     const network = await provider.getNetwork();
     if (Number(network.chainId) !== CHAIN_ID) return json(503, { error: `Bridge RPC is on chain ${network.chainId}; expected ${CHAIN_ID}` });
 
+    const { data: config, error: configError } = await service
+      .from("crypto_chain_config")
+      .select("chain_id,token_address,deployment_verified_at")
+      .eq("id", true)
+      .single();
+    if (configError) throw configError;
+    if (Number(config?.chain_id) !== CHAIN_ID) return json(503, { error: "Configured FAV chain is not Base Sepolia" });
+    if (!config?.token_address || !config?.deployment_verified_at) return json(503, { error: "FAV testnet deployment is not verified" });
+
+    const verifiedTokenAddress = String(config.token_address).toLowerCase();
     const body = await req.json().catch(() => ({}));
     const limit = Math.max(1, Math.min(Number(body?.limit || 25), 100));
     const { data: requests, error: listError } = await service.rpc("get_crypto_unlocks_for_reconciliation", {
@@ -48,13 +58,17 @@ Deno.serve(async (req: Request) => {
     for (const unlock of requests || []) {
       const requestId = String(unlock.id);
       const txHash = String(unlock.tx_hash || "");
-      const tokenAddress = String(unlock.token_address || "");
+      const tokenAddress = String(unlock.token_address || "").toLowerCase();
       const mintReference = String(unlock.mint_reference || "");
       const required = Math.max(1, Number(unlock.confirmations_required || 1));
 
       try {
         if (Number(unlock.chain_id) !== CHAIN_ID) {
           results.push({ requestId, txHash, state: "blocked", reason: "wrong-chain" });
+          continue;
+        }
+        if (tokenAddress !== verifiedTokenAddress) {
+          results.push({ requestId, txHash, state: "blocked", reason: "token-does-not-match-verified-deployment" });
           continue;
         }
 
@@ -69,8 +83,6 @@ Deno.serve(async (req: Request) => {
         const receipt = await provider.getTransactionReceipt(txHash);
 
         if (!receipt) {
-          // Never refund while the on-chain reference says a mint happened. This can occur if a
-          // replacement transaction or a DB write failure made our stored tx hash stale.
           results.push({
             requestId,
             txHash,
@@ -81,9 +93,6 @@ Deno.serve(async (req: Request) => {
         }
 
         if (Number(receipt.status) !== 1) {
-          // A reverted tracked transaction is only safe to refund if the unique mint reference is
-          // still unused on-chain. If another replacement already minted it, preserving the
-          // reservation avoids creating both internal and on-chain value.
           if (mintReferenceProcessed) {
             results.push({
               requestId,
@@ -106,8 +115,6 @@ Deno.serve(async (req: Request) => {
         }
 
         if (!mintReferenceProcessed) {
-          // A successful receipt that did not consume the expected reference is an accounting
-          // anomaly. Do not confirm or refund automatically.
           results.push({
             requestId,
             txHash,
