@@ -20,6 +20,17 @@ contract MinterActor {
         );
         return ok;
     }
+
+    function grantMinter(FavouritToken token, address account) external returns (bool) {
+        (bool ok,) = address(token).call(
+            abi.encodeWithSignature(
+                "grantRole(bytes32,address)",
+                token.MINTER_ROLE(),
+                account
+            )
+        );
+        return ok;
+    }
 }
 
 contract FavouritTokenRoleRotationTest {
@@ -79,14 +90,11 @@ contract FavouritTokenRoleRotationTest {
         );
 
         bytes32 minterRole = token.MINTER_ROLE();
-        (bool ok,) = address(attacker).call(
-            abi.encodeWithSignature(
-                "grantRole(bytes32,address)",
-                minterRole,
-                address(attacker)
-            )
+        require(
+            !attacker.grantMinter(token, address(attacker)),
+            "non-admin role rotation unexpectedly succeeded"
         );
-        require(!ok, "non-admin role rotation unexpectedly succeeded");
         require(!token.hasRole(minterRole, address(attacker)), "attacker received minter role");
+        require(token.hasRole(minterRole, address(currentMinter)), "current minter was changed");
     }
 }
