@@ -28,6 +28,10 @@ fail() {
   exit 1
 }
 
+uint_value() {
+  awk '{print $1}'
+}
+
 for command in anvil forge cast python3; do
   command -v "$command" >/dev/null 2>&1 || fail "$command is required"
 done
@@ -55,7 +59,7 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
-ACTUAL_CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL" 2>/dev/null || true)"
+ACTUAL_CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL" 2>/dev/null | uint_value || true)"
 [[ "$ACTUAL_CHAIN_ID" == "$CHAIN_ID" ]] || {
   cat "$ANVIL_LOG" >&2 || true
   fail "Anvil did not start with chain id $CHAIN_ID"
@@ -111,8 +115,8 @@ cast send "$TOKEN_ADDRESS" \
   --rpc-url "$RPC_URL" \
   --private-key "$MINTER_KEY" >/dev/null
 
-BALANCE="$(cast call "$TOKEN_ADDRESS" 'balanceOf(address)(uint256)' "$RECIPIENT_ADDRESS" --rpc-url "$RPC_URL")"
-SUPPLY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL")"
+BALANCE="$(cast call "$TOKEN_ADDRESS" 'balanceOf(address)(uint256)' "$RECIPIENT_ADDRESS" --rpc-url "$RPC_URL" | uint_value)"
+SUPPLY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL" | uint_value)"
 PROCESSED="$(cast call "$TOKEN_ADDRESS" 'processedMintReferences(bytes32)(bool)' "$MINT_REFERENCE" --rpc-url "$RPC_URL")"
 
 [[ "$BALANCE" == "$MINT_AMOUNT" ]] || fail "recipient balance $BALANCE != $MINT_AMOUNT"
@@ -128,8 +132,8 @@ if cast send "$TOKEN_ADDRESS" \
   fail "duplicate mint reference unexpectedly succeeded"
 fi
 
-BALANCE_AFTER_RETRY="$(cast call "$TOKEN_ADDRESS" 'balanceOf(address)(uint256)' "$RECIPIENT_ADDRESS" --rpc-url "$RPC_URL")"
-SUPPLY_AFTER_RETRY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL")"
+BALANCE_AFTER_RETRY="$(cast call "$TOKEN_ADDRESS" 'balanceOf(address)(uint256)' "$RECIPIENT_ADDRESS" --rpc-url "$RPC_URL" | uint_value)"
+SUPPLY_AFTER_RETRY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL" | uint_value)"
 [[ "$BALANCE_AFTER_RETRY" == "$MINT_AMOUNT" ]] || fail "duplicate retry changed recipient balance"
 [[ "$SUPPLY_AFTER_RETRY" == "$MINT_AMOUNT" ]] || fail "duplicate retry changed total supply"
 
