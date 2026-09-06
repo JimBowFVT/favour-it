@@ -24,23 +24,29 @@ describe('order normalization', () => {
         revisions: 2,
         service_type: 'deliverable',
         deal_description: 'Original deal scope',
-        buyer_requirements: 'Use the supplied brief',
+        buyer_requirements: 'Send your goals, references and access details.',
+        buyer_brief: 'Goal: launch the landing page next week. References and staging access are attached in Messages.',
+        buyer_brief_captured_at: '2026-09-06T16:30:00Z',
       },
       review: { rating: 5, body: 'Great work' },
     });
 
     expect(order.buyer).toBe('Buyer One');
     expect(order.seller).toBe('Seller One');
+    expect(order.buyerUsername).toBe('buyerone');
+    expect(order.sellerUsername).toBe('sellerone');
     expect(order.category).toBe('Web Development');
     expect(order.packageTitle).toBe('Standard build');
     expect(order.buyerTotal).toBe(103);
     expect(order.sellerFee).toBe(3);
     expect(order.sellerPayout).toBe(97);
     expect(order.review.rating).toBe(5);
-    expect(order.buyerRequirements).toBe('Use the supplied brief');
+    expect(order.buyerRequirements).toBe('Send your goals, references and access details.');
+    expect(order.buyerBrief).toMatch(/launch the landing page/);
+    expect(order.buyerBriefCapturedAt).toBe('2026-09-06T16:30:00Z');
   });
 
-  test('falls back safely for legacy orders without fee snapshots', () => {
+  test('falls back safely for legacy orders without fee or brief snapshots', () => {
     const order = normalizeOrder({
       id: 'legacy-order',
       buyer_id: 'buyer-1',
@@ -55,5 +61,6 @@ describe('order normalization', () => {
     expect(order.buyerTotal).toBe(25);
     expect(order.sellerPayout).toBe(24);
     expect(order.packageTier).toBe('basic');
+    expect(order.buyerBrief).toBe('');
   });
 });

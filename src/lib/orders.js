@@ -35,6 +35,8 @@ const normalizeOrder = (row) => {
     serviceType: snapshot.service_type || 'deliverable',
     dealDescription: snapshot.deal_description || '',
     buyerRequirements: snapshot.buyer_requirements || '',
+    buyerBrief: snapshot.buyer_brief || '',
+    buyerBriefCapturedAt: snapshot.buyer_brief_captured_at || null,
     scopeCapturedAt: snapshot.captured_at || null,
     review: row.review || null,
     createdAt: row.created_at,
@@ -47,14 +49,20 @@ function throwOrderError(error, fallback) {
   if (/seller must deliver/i.test(message)) throw new Error('The seller must deliver the work before you can release the FAV.');
   if (/insufficient FAV/i.test(message)) throw new Error('You do not have enough available FAV for this order and its buyer fee.');
   if (/selected package is not available/i.test(message)) throw new Error('That package is no longer available. Refresh the deal and choose another package.');
+  if (/answer the seller requirements/i.test(message)) throw new Error('Add the information the seller requested before funding this order.');
+  if (/buyer brief must be 5000/i.test(message)) throw new Error('Your order brief must be 5,000 characters or less.');
   throw new Error(message || fallback);
 }
 
-export async function createOrderAndHoldFav(dealId, packageTier = 'basic') {
+export async function createOrderAndHoldFav(dealId, packageTier = 'basic', buyerBrief = '') {
   if (!dealId) throw new Error('A valid deal is required.');
-  const { data, error } = await supabase.rpc('create_order_and_hold_fav_v2', {
+  const cleanBrief = String(buyerBrief || '').trim();
+  if (cleanBrief.length > 5000) throw new Error('Your order brief must be 5,000 characters or less.');
+
+  const { data, error } = await supabase.rpc('create_order_and_hold_fav_v3', {
     p_deal_id: dealId,
     p_package_tier: packageTier,
+    p_buyer_brief: cleanBrief,
   });
   if (error) throwOrderError(error, 'Unable to fund this order.');
   const orderId = typeof data === 'string' ? data : Array.isArray(data) ? data[0]?.id || data[0] : data?.id || data;
