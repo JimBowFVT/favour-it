@@ -55,11 +55,13 @@ function ReviewCard({ review }) {
 export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorite, onFavorite, buyerFeeBps = 300 }) {
   const [detail, setDetail] = useState(deal);
   const [loading, setLoading] = useState(false);
+  const [buyerBrief, setBuyerBrief] = useState('');
   const packages = useMemo(() => fallbackPackages(detail), [detail]);
   const [selectedTier, setSelectedTier] = useState(packages[0]?.tier || 'basic');
 
   useEffect(() => {
     setDetail(deal);
+    setBuyerBrief('');
     setSelectedTier(fallbackPackages(deal)[0]?.tier || 'basic');
     if (!isUuid(deal?.id)) return undefined;
     let active = true;
@@ -83,6 +85,11 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
   const faqs = Array.isArray(detail?.faqs) ? detail.faqs : [];
   const purchasable = isUuid(detail?.id) && !detail?.sample;
   const canMessage = purchasable && Boolean(detail?.sellerUsername);
+  const sellerRequirements = String(detail?.buyerRequirements || '').trim();
+  const requiresBrief = Boolean(sellerRequirements);
+  const briefLength = buyerBrief.trim().length;
+  const briefValid = !requiresBrief || briefLength >= 3;
+  const canCheckout = purchasable && briefValid && !busy;
 
   const messageSeller = () => {
     if (!canMessage) return;
@@ -91,6 +98,10 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
   const openSeller = () => {
     if (!detail?.sellerUsername) return;
     window.dispatchEvent(new CustomEvent('favourit:open-profile', { detail: { username: detail.sellerUsername } }));
+  };
+  const checkout = () => {
+    if (!canCheckout) return;
+    onBuy(selected?.tier || 'basic', buyerBrief.trim());
   };
 
   if (!detail) return null;
@@ -118,7 +129,7 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
           </div>
 
           <section className="deal-detail-section"><h2>About this service</h2><p>{detail.description || 'The seller has not added a longer description yet.'}</p><div className="deal-service-type-note"><b>{serviceType.label}</b><span>{serviceType.note}</span></div></section>
-          <section className="deal-detail-section"><h2>What the seller needs from you</h2>{detail.buyerRequirements ? <p className="deal-requirements">{detail.buyerRequirements}</p> : <p className="deal-muted">The seller will confirm any required information in Messages after the order starts.</p>}</section>
+          <section className="deal-detail-section"><h2>What the seller needs from you</h2>{sellerRequirements ? <p className="deal-requirements">{sellerRequirements}</p> : <p className="deal-muted">No information is required before checkout. You can still message the seller if you want to clarify the scope.</p>}</section>
           {portfolio.length > 0 && <section className="deal-detail-section"><h2>Portfolio</h2><div className="deal-portfolio-grid">{portfolio.map((item, index) => <a key={`${item.url}-${index}`} href={item.url} target="_blank" rel="noreferrer"><span>Sample {index + 1}</span><strong>{item.title}</strong><small>Open work sample ↗</small></a>)}</div></section>}
           <section className="deal-detail-section"><div className="deal-section-heading"><h2>Seller reputation</h2><span>{detail.reviews || 0} reviews</span></div>{reviews.length ? <div className="deal-reviews-grid">{reviews.map(review => <ReviewCard key={review.id} review={review} />)}</div> : <div className="deal-empty-block"><strong>No written reviews yet.</strong><span>New sellers can still earn trust through protected Favourit orders.</span></div>}</section>
           {faqs.length > 0 && <section className="deal-detail-section"><h2>Frequently asked questions</h2><div className="deal-faq-list">{faqs.map((item, index) => <details key={`${item.question}-${index}`}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>}
@@ -136,15 +147,23 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
             <span><b>↻</b><strong>{selected?.revisions ?? 0}</strong><small>{Number(selected?.revisions) === 1 ? 'revision' : 'revisions'}</small></span>
             {selected?.sessionMinutes && <span><b>◷</b><strong>{selected.sessionMinutes} min</strong><small>session</small></span>}
           </div>
+
+          {requiresBrief && <div className={`deal-checkout-brief ${briefValid ? 'ready' : ''}`}>
+            <div className="deal-checkout-brief-head"><strong>Your order brief</strong><span>Required</span></div>
+            <p>{sellerRequirements}</p>
+            <textarea value={buyerBrief} maxLength="5000" rows="5" onChange={event => setBuyerBrief(event.target.value)} placeholder="Answer the seller's requirements with the details they need to start…" />
+            <small><span>{briefLength < 3 ? 'Add at least a few words before checkout.' : 'Saved with this order so the agreed starting information cannot change later.'}</span><b>{buyerBrief.length}/5000</b></small>
+          </div>}
+
           <div className="deal-checkout-fees" aria-label="Order total">
             <span><small>Service price</small><b>{formatFav(servicePriceMicro)} FAV</b></span>
             <span><small>Buyer marketplace fee · {formatPercentFromBps(buyerFeeBps)}</small><b>{formatFav(buyerFeeMicro)} FAV</b></span>
             <span className="deal-checkout-total"><small>Total held in escrow</small><b>{formatFav(buyerTotalMicro)} FAV</b></span>
           </div>
-          <button className="primary full" type="button" disabled={busy || !purchasable} onClick={() => onBuy(selected?.tier || 'basic')}>{!purchasable ? 'Sample listing — publish a real deal to order' : busy ? 'Funding escrow…' : `Continue — ${formatFav(buyerTotalMicro)} FAV`}</button>
+          <button className="primary full" type="button" disabled={!canCheckout} onClick={checkout}>{!purchasable ? 'Sample listing — publish a real deal to order' : busy ? 'Funding escrow…' : !briefValid ? 'Add your brief to continue' : `Continue — ${formatFav(buyerTotalMicro)} FAV`}</button>
           <button className="secondary full" type="button" disabled={!canMessage} onClick={messageSeller}>Ask the seller first</button>
           <div className="balance-note">Your balance: <strong>{formatFav(fav)} FAV</strong></div>
-          <div className="deal-protection"><span>✓ Payment + buyer fee held in escrow</span><span>✓ Package captured on the order</span><span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
+          <div className="deal-protection"><span>✓ Payment + buyer fee held in escrow</span><span>✓ Package captured on the order</span>{requiresBrief && <span>✓ Your brief captured with the order</span>}<span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
         </div>
       </aside>
     </div>
