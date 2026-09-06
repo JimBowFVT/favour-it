@@ -29,6 +29,28 @@ jobs:
       - name: Test FAV smart contracts
         run: forge test --root contracts -vv
 
+      - name: Validate FAV deployment tooling
+        run: |
+          bash -n scripts/deploy-fav-base-sepolia.sh
+          bash -n scripts/verify-fav-base-sepolia.sh
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(Path('contracts/deployments/base-sepolia-config.json').read_text())
+          assert policy['chainId'] == 84532
+          assert policy['decimals'] == 6
+          assert policy['initialCapFav'] == 10_000_000
+          assert policy['initialCapMicroFav'] == 10_000_000_000_000
+          assert policy['initialSupplyFav'] == 0
+          assert policy['adminAddress'].lower() == '0xb15bd11ebf03fecee5f92f260def797542e0f570'
+          assert policy['unlockFeeBps'] == 250
+          assert policy['buyerMarketplaceFeeBps'] == 300
+          assert policy['sellerMarketplaceFeeBps'] == 300
+          assert policy['unlockEnabledByDefault'] is False
+          assert policy['mainnetDeploymentAllowed'] is False
+          PY
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
