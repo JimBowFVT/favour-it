@@ -51,7 +51,16 @@ jobs:
           DEPLOYMENT_OUTPUT: ${{ github.workspace }}/contracts/deployments/base-sepolia-latest.json
         run: bash scripts/deploy-fav-base-sepolia.sh
 
-      - name: Upload deployment manifest
+      - name: Verify deployed bytecode configuration
+        env:
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+          FAV_ADMIN_ADDRESS: ${{ inputs.admin_address }}
+        run: |
+          export FAV_TOKEN_ADDRESS="$(jq -r '.tokenAddress' contracts/deployments/base-sepolia-latest.json)"
+          export FAV_MINTER_ADDRESS="$(jq -r '.minterAddress' contracts/deployments/base-sepolia-latest.json)"
+          bash scripts/verify-fav-base-sepolia.sh
+
+      - name: Upload verified deployment manifest
         uses: actions/upload-artifact@v4
         with:
           name: fav-base-sepolia-deployment
