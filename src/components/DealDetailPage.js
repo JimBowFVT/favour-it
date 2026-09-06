@@ -3,6 +3,7 @@ import { getDealById } from '../lib/deals';
 import { formatFav } from '../lib/wallet';
 import { formatPercentFromBps } from '../lib/economy';
 import { calculateBpsFeeUnits } from '../data/economy';
+import DealReportButton from './DealReportButton';
 import './DealDetailPage.css';
 
 const SERVICE_TYPE_COPY = {
@@ -164,6 +165,7 @@ export default function DealDetailPage({ deal, onBack, onBuy, fav, busy, favorit
           <button className="secondary full" type="button" disabled={!canMessage} onClick={messageSeller}>Ask the seller first</button>
           <div className="balance-note">Your balance: <strong>{formatFav(fav)} FAV</strong></div>
           <div className="deal-protection"><span>✓ Payment + buyer fee held in escrow</span><span>✓ Package captured on the order</span>{requiresBrief && <span>✓ Your brief captured with the order</span>}<span>✓ Secure Messages</span><span>✓ Dispute protection</span></div>
+          <DealReportButton dealId={detail.id} disabled={!purchasable} />
         </div>
       </aside>
     </div>
