@@ -57,14 +57,14 @@ declare
   v_new jsonb;
 begin
   v_old := jsonb_build_object(
-    'buyer_fee_bps', old.buyer_fee_bps,
-    'seller_fee_bps', old.seller_fee_bps,
+    'buyer_marketplace_fee_bps', old.buyer_marketplace_fee_bps,
+    'seller_marketplace_fee_bps', old.seller_marketplace_fee_bps,
     'crypto_unlock_fee_bps', old.crypto_unlock_fee_bps,
     'crypto_unlock_maturity_hours', old.crypto_unlock_maturity_hours
   );
   v_new := jsonb_build_object(
-    'buyer_fee_bps', new.buyer_fee_bps,
-    'seller_fee_bps', new.seller_fee_bps,
+    'buyer_marketplace_fee_bps', new.buyer_marketplace_fee_bps,
+    'seller_marketplace_fee_bps', new.seller_marketplace_fee_bps,
     'crypto_unlock_fee_bps', new.crypto_unlock_fee_bps,
     'crypto_unlock_maturity_hours', new.crypto_unlock_maturity_hours
   );
@@ -84,6 +84,6 @@ revoke all on function public.audit_fav_crypto_economy_config_change() from publ
 
 drop trigger if exists fav_crypto_economy_config_audit on public.economy_config;
 create trigger fav_crypto_economy_config_audit
-after update of buyer_fee_bps, seller_fee_bps, crypto_unlock_fee_bps, crypto_unlock_maturity_hours
+after update of buyer_marketplace_fee_bps, seller_marketplace_fee_bps, crypto_unlock_fee_bps, crypto_unlock_maturity_hours
 on public.economy_config
 for each row execute function public.audit_fav_crypto_economy_config_change();
