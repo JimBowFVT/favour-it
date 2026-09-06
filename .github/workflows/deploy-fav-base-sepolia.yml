@@ -3,10 +3,9 @@ name: Deploy FAV to Base Sepolia
 on:
   workflow_dispatch:
     inputs:
-      admin_address:
-        description: Public wallet that receives FAV admin/cap/pause roles
+      confirmation:
+        description: Type DEPLOY_FAV_BASE_SEPOLIA to confirm this testnet deployment
         required: true
-        default: '0xB15bd11EBF03feceE5F92F260def797542E0f570'
         type: string
       minter_address:
         description: Optional dedicated minter; blank uses the disposable testnet deployer address
@@ -26,6 +25,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Confirm explicit testnet deployment
+        env:
+          DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$DEPLOY_CONFIRMATION" = "DEPLOY_FAV_BASE_SEPOLIA" || {
+            echo "Deployment confirmation did not match the required phrase." >&2
+            exit 1
+          }
+
+      - name: Load locked deployment policy
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(Path('contracts/deployments/base-sepolia-config.json').read_text())
+          expected = {
+              'chainId': 84532,
+              'decimals': 6,
+              'initialCapFav': 10_000_000,
+              'initialCapMicroFav': 10_000_000_000_000,
+              'initialSupplyFav': 0,
+              'adminAddress': '0xB15bd11EBF03feceE5F92F260def797542E0f570',
+              'unlockEnabledByDefault': False,
+              'mainnetDeploymentAllowed': False,
+          }
+          for key, value in expected.items():
+              if str(policy.get(key)).lower() != str(value).lower():
+                  raise SystemExit(f'locked FAV policy mismatch: {key}')
+          with open(Path(__import__('os').environ['GITHUB_ENV']), 'a') as env:
+              env.write(f"FAV_ADMIN_ADDRESS={policy['adminAddress']}\n")
+          PY
+
       - name: Setup Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
@@ -44,7 +76,6 @@ jobs:
 
       - name: Deploy 10,000,000-cap FAV
         env:
-          FAV_ADMIN_ADDRESS: ${{ inputs.admin_address }}
           FAV_MINTER_ADDRESS: ${{ inputs.minter_address }}
           FAV_DEPLOYER_PRIVATE_KEY: ${{ secrets.FAV_TESTNET_DEPLOYER_PRIVATE_KEY }}
           BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
@@ -54,7 +85,6 @@ jobs:
       - name: Verify deployed bytecode configuration
         env:
           BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
-          FAV_ADMIN_ADDRESS: ${{ inputs.admin_address }}
         run: |
           export FAV_TOKEN_ADDRESS="$(jq -r '.tokenAddress' contracts/deployments/base-sepolia-latest.json)"
           export FAV_MINTER_ADDRESS="$(jq -r '.minterAddress' contracts/deployments/base-sepolia-latest.json)"
