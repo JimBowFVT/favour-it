@@ -2,15 +2,16 @@
 set -euo pipefail
 
 # Deploy FAV to Base Sepolia only.
-# The public admin address and initial cap are locked in the committed deployment policy.
-# This script never prints the deployer private key and never writes it to disk.
+# The public admin address, disposable testnet deployer and initial cap are locked
+# in the committed deployment policy. This script never prints the deployer
+# private key and never writes it to disk.
 #
 # Required:
-#   FAV_DEPLOYER_PRIVATE_KEY=0x...     # disposable/funded Base Sepolia deployer key
+#   FAV_DEPLOYER_PRIVATE_KEY=0x...     # private key for the locked disposable Base Sepolia deployer
 #
 # Optional:
 #   FAV_ADMIN_ADDRESS=0x...            # if set, MUST match the committed policy
-#   FAV_MINTER_ADDRESS=0x...           # defaults to the disposable deployer address for testnet
+#   FAV_MINTER_ADDRESS=0x...           # defaults to the locked disposable deployer address for testnet
 #   BASE_SEPOLIA_RPC_URL=https://...   # defaults to Base public Sepolia RPC
 #   DEPLOYMENT_OUTPUT=/path/file.json  # defaults to contracts/deployments/base-sepolia-latest.json
 
@@ -47,6 +48,7 @@ required = {
     "initialCapFav": 10_000_000,
     "initialCapMicroFav": 10_000_000_000_000,
     "initialSupplyFav": 0,
+    "unlockMaturityHours": 120,
     "unlockEnabledByDefault": False,
     "mainnetDeploymentAllowed": False,
 }
@@ -54,18 +56,25 @@ for key, expected in required.items():
     if policy.get(key) != expected:
         raise SystemExit(f"deployment policy mismatch for {key}: {policy.get(key)!r} != {expected!r}")
 admin = str(policy.get("adminAddress", "")).strip()
+deployer = str(policy.get("expectedTestnetDeployerAddress", "")).strip()
 if not admin.startswith("0x") or len(admin) != 42:
     raise SystemExit("deployment policy adminAddress is invalid")
+if not deployer.startswith("0x") or len(deployer) != 42:
+    raise SystemExit("deployment policy expectedTestnetDeployerAddress is invalid")
+if admin.lower() == deployer.lower():
+    raise SystemExit("deployment policy must separate admin and disposable deployer")
 print(admin)
+print(deployer)
 print(int(policy["initialCapMicroFav"]))
 print(int(policy["initialCapFav"]))
 PY
 )
 
 POLICY_ADMIN_ADDRESS="${POLICY_VALUES[0]:-}"
-INITIAL_CAP_UNITS="${POLICY_VALUES[1]:-}"
-INITIAL_CAP_FAV="${POLICY_VALUES[2]:-}"
-[[ -n "$POLICY_ADMIN_ADDRESS" && -n "$INITIAL_CAP_UNITS" && -n "$INITIAL_CAP_FAV" ]] || fail "deployment policy could not be loaded"
+POLICY_DEPLOYER_ADDRESS="${POLICY_VALUES[1]:-}"
+INITIAL_CAP_UNITS="${POLICY_VALUES[2]:-}"
+INITIAL_CAP_FAV="${POLICY_VALUES[3]:-}"
+[[ -n "$POLICY_ADMIN_ADDRESS" && -n "$POLICY_DEPLOYER_ADDRESS" && -n "$INITIAL_CAP_UNITS" && -n "$INITIAL_CAP_FAV" ]] || fail "deployment policy could not be loaded"
 
 if [[ -n "$ADMIN_ADDRESS_INPUT" && "${ADMIN_ADDRESS_INPUT,,}" != "${POLICY_ADMIN_ADDRESS,,}" ]]; then
   fail "FAV_ADMIN_ADDRESS does not match the locked deployment policy"
@@ -73,15 +82,24 @@ fi
 ADMIN_ADDRESS="$POLICY_ADMIN_ADDRESS"
 
 [[ "$ADMIN_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "locked admin address is not a valid EVM address"
+[[ "$POLICY_DEPLOYER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "locked testnet deployer address is not a valid EVM address"
 
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL")"
 [[ "$CHAIN_ID" == "$EXPECTED_CHAIN_ID" ]] || fail "RPC chain id is ${CHAIN_ID}; expected Base Sepolia ${EXPECTED_CHAIN_ID}"
 
 ADMIN_ADDRESS="$(cast to-check-sum-address "$ADMIN_ADDRESS")"
+POLICY_DEPLOYER_ADDRESS="$(cast to-check-sum-address "$POLICY_DEPLOYER_ADDRESS")"
 DEPLOYER_ADDRESS="$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")"
+DEPLOYER_ADDRESS="$(cast to-check-sum-address "$DEPLOYER_ADDRESS")"
+[[ "$DEPLOYER_ADDRESS" == "$POLICY_DEPLOYER_ADDRESS" ]] || fail "deployer private key does not match the locked disposable testnet deployer ${POLICY_DEPLOYER_ADDRESS}"
+[[ "$DEPLOYER_ADDRESS" != "$ADMIN_ADDRESS" ]] || fail "disposable deployer must not be the long-term admin address"
+
 MINTER_ADDRESS="${MINTER_ADDRESS_INPUT:-$DEPLOYER_ADDRESS}"
 [[ "$MINTER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_MINTER_ADDRESS is not a valid EVM address"
 MINTER_ADDRESS="$(cast to-check-sum-address "$MINTER_ADDRESS")"
+
+BALANCE_WEI="$(cast balance "$DEPLOYER_ADDRESS" --rpc-url "$RPC_URL")"
+[[ "$BALANCE_WEI" != "0" ]] || fail "locked disposable deployer has no Base Sepolia ETH for gas"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 TMP_OUTPUT="$(mktemp)"
@@ -89,13 +107,14 @@ trap 'rm -f "$TMP_OUTPUT"' EXIT
 
 printf 'Deploying Favourit (FAV) to Base Sepolia...\n'
 printf '  chain id: %s\n' "$CHAIN_ID"
-printf '  deployer: %s\n' "$DEPLOYER_ADDRESS"
+printf '  deployer: %s (locked testnet policy)\n' "$DEPLOYER_ADDRESS"
 printf '  admin:    %s (locked policy)\n' "$ADMIN_ADDRESS"
 printf '  minter:   %s\n' "$MINTER_ADDRESS"
 printf '  cap:      %s FAV\n' "$INITIAL_CAP_FAV"
+printf '  gas ETH:  %s wei\n' "$BALANCE_WEI"
 
 if [[ "$MINTER_ADDRESS" == "$ADMIN_ADDRESS" ]]; then
-  printf 'WARNING: minter and admin are the same address. This is acceptable only for temporary testnet use.\n' >&2
+  fail "minter must not be the long-term admin address"
 fi
 
 (
