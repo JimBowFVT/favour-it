@@ -29,6 +29,13 @@ function TxLink({ hash }) {
   return <a href={`${BASE_SEPOLIA.explorerUrl}/tx/${hash}`} target="_blank" rel="noreferrer">View transaction ↗</a>;
 }
 
+function formatMaturity(hours) {
+  const value = Number(hours);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (value % 24 === 0) return `${value / 24} day${value === 24 ? '' : 's'}`;
+  return `${value} hour${value === 1 ? '' : 's'}`;
+}
+
 export default function CryptoWalletPanel({ onWalletChanged }) {
   const [chain, setChain] = useState(null);
   const [wallet, setWallet] = useState(null);
@@ -68,7 +75,10 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
     [amountMicroFav, breakdown?.crypto_unlock_fee_bps],
   );
   const eligible = Number(breakdown?.crypto_eligible_fav || 0);
+  const maturing = Number(breakdown?.crypto_maturing_fav || 0);
   const pending = Number(breakdown?.pending_crypto_unlock_fav || 0);
+  const maturityLabel = formatMaturity(breakdown?.crypto_unlock_maturity_hours);
+  const nextEligibleAt = breakdown?.next_crypto_eligible_at ? new Date(breakdown.next_crypto_eligible_at) : null;
   const deploymentVerified = Boolean(chain?.token_address && chain?.deployment_verified_at);
   const canUnlock = Boolean(
     deploymentVerified &&
@@ -144,17 +154,19 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
       <div>
         <div className="eyebrow">FAV CRYPTO · TESTNET</div>
         <h2>Optional on-chain wallet</h2>
-        <p>Only FAV earned from completed services is eligible for the crypto unlock path. Rewards and legacy balances stay inside Favourit.</p>
+        <p>Only matured FAV earned from completed services is eligible for the crypto unlock path. Rewards and legacy balances stay inside Favourit.</p>
       </div>
       <span className={`crypto-network-badge ${deploymentVerified ? 'ready' : ''}`}>{BASE_SEPOLIA.name}</span>
     </div>
 
     {loading ? <div className="crypto-wallet-loading">Loading crypto status…</div> : <>
       <div className="crypto-wallet-stats">
-        <div><small>CRYPTO ELIGIBLE</small><strong>{formatFav(eligible)} FAV</strong><span>earned seller balance</span></div>
+        <div><small>CRYPTO ELIGIBLE</small><strong>{formatFav(eligible)} FAV</strong><span>mature seller earnings</span></div>
+        <div><small>MATURING</small><strong>{formatFav(maturing)} FAV</strong><span>{maturityLabel ? `${maturityLabel} safety window` : 'policy not configured'}</span></div>
         <div><small>RESERVED</small><strong>{formatFav(pending)} FAV</strong><span>pending unlocks</span></div>
         <div><small>TESTNET CAP</small><strong>{formatFav(Number(chain?.initial_cap_micro_fav || 10_000_000_000_000))} FAV</strong><span>maximum initial supply</span></div>
       </div>
+      {nextEligibleAt && Number.isFinite(nextEligibleAt.getTime()) && <div className="crypto-notice"><strong>Next earned FAV maturity</strong><span>{nextEligibleAt.toLocaleString()}</span></div>}
 
       <div className="crypto-wallet-grid">
         <div className="crypto-wallet-card">
@@ -172,10 +184,10 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
 
         <div className="crypto-wallet-card">
           <div className="crypto-card-title"><h3>Unlock earned FAV</h3><span>{Number(breakdown?.crypto_unlock_fee_bps || 250) / 100}% fee</span></div>
-          {!chain?.token_address ? <div className="crypto-notice"><strong>Testnet token deployment pending</strong><span>Wallet verification is ready, but no FAV can move on-chain until the Base Sepolia contract is deployed and recorded.</span></div> : !chain?.deployment_verified_at ? <div className="crypto-notice"><strong>Deployment verification pending</strong><span>The contract address is recorded, but Favourit will not unlock FAV until its supply, roles and chain configuration are independently verified.</span></div> : !chain?.unlock_enabled ? <div className="crypto-notice"><strong>Crypto unlock is disabled</strong><span>The verified testnet token exists, but Favourit has not enabled the unlock queue yet.</span></div> : <>
+          {!chain?.token_address ? <div className="crypto-notice"><strong>Testnet token deployment pending</strong><span>Wallet verification is ready, but no FAV can move on-chain until the Base Sepolia contract is deployed and recorded.</span></div> : !chain?.deployment_verified_at ? <div className="crypto-notice"><strong>Deployment verification pending</strong><span>The contract address is recorded, but Favourit will not unlock FAV until its supply, roles and chain configuration are independently verified.</span></div> : !maturityLabel ? <div className="crypto-notice"><strong>Seller maturity policy pending</strong><span>Favourit will not enable crypto unlocks until the seller-earnings safety window is explicitly configured.</span></div> : !chain?.unlock_enabled ? <div className="crypto-notice"><strong>Crypto unlock is disabled</strong><span>The verified testnet token exists, but Favourit has not enabled the unlock queue yet.</span></div> : <>
             <label className="crypto-amount-field"><span>Amount to unlock</span><div><input value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" placeholder="0.000000" /><b>FAV</b></div></label>
             {amountMicroFav ? <div className="crypto-quote"><span>Unlock fee <b>{formatFav(quote.fee_fav)} FAV</b></span><span>On-chain amount <b>{formatFav(quote.net_fav)} FAV</b></span></div> : null}
-            {amountMicroFav > eligible && <small className="crypto-error">Amount exceeds your eligible earned FAV.</small>}
+            {amountMicroFav > eligible && <small className="crypto-error">Amount exceeds your matured, crypto-eligible FAV.</small>}
             <button className="primary full" type="button" disabled={!canUnlock} onClick={unlock}>{busy ? 'Queuing…' : 'Queue crypto unlock'}</button>
           </>}
         </div>
