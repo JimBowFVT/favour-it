@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       minter_address:
-        description: Optional dedicated minter; blank uses the disposable testnet deployer address
+        description: Optional dedicated minter; blank uses the locked disposable testnet deployer address
         required: false
         default: ''
         type: string
@@ -52,6 +52,8 @@ jobs:
               'initialCapMicroFav': 10_000_000_000_000,
               'initialSupplyFav': 0,
               'adminAddress': '0xB15bd11EBF03feceE5F92F260def797542E0f570',
+              'expectedTestnetDeployerAddress': '0xF58C2b4d86BeFE571b62B0cCbC6f947B48BC7b41',
+              'unlockMaturityHours': 120,
               'unlockEnabledByDefault': False,
               'mainnetDeploymentAllowed': False,
           }
@@ -60,6 +62,7 @@ jobs:
                   raise SystemExit(f'locked FAV policy mismatch: {key}')
           with open(Path(__import__('os').environ['GITHUB_ENV']), 'a') as env:
               env.write(f"FAV_ADMIN_ADDRESS={policy['adminAddress']}\n")
+              env.write(f"FAV_EXPECTED_DEPLOYER_ADDRESS={policy['expectedTestnetDeployerAddress']}\n")
           PY
 
       - name: Setup Foundry
@@ -78,7 +81,7 @@ jobs:
       - name: Test contract before deployment
         run: forge test --root contracts -vv
 
-      - name: Preflight deployer and Base Sepolia balance
+      - name: Preflight deployer identity and Base Sepolia balance
         env:
           FAV_DEPLOYER_PRIVATE_KEY: ${{ secrets.FAV_TESTNET_DEPLOYER_PRIVATE_KEY }}
         run: |
@@ -94,12 +97,25 @@ jobs:
           }
 
           deployer="$(cast wallet address --private-key "$FAV_DEPLOYER_PRIVATE_KEY")"
+          expected_deployer="$(cast to-check-sum-address "$FAV_EXPECTED_DEPLOYER_ADDRESS")"
+          deployer="$(cast to-check-sum-address "$deployer")"
+          test "$deployer" = "$expected_deployer" || {
+            echo "The configured deployer secret resolves to $deployer, not the locked testnet deployer $expected_deployer." >&2
+            echo "Replace FAV_TESTNET_DEPLOYER_PRIVATE_KEY with the private key for the locked disposable testnet account." >&2
+            exit 1
+          }
+
+          test "${deployer,,}" != "${FAV_ADMIN_ADDRESS,,}" || {
+            echo "Refusing deployment because the disposable deployer matches the long-term admin address." >&2
+            exit 1
+          }
+
           balance_wei="$(cast balance "$deployer" --rpc-url "$BASE_SEPOLIA_RPC_URL")"
-          echo "Disposable testnet deployer: $deployer"
+          echo "Locked disposable testnet deployer: $deployer"
           echo "Base Sepolia ETH balance (wei): $balance_wei"
 
           if [ "$balance_wei" = "0" ]; then
-            echo "The disposable deployer has no Base Sepolia ETH. Fund the public address above with testnet ETH and rerun." >&2
+            echo "The disposable deployer has no Base Sepolia ETH. Fund $deployer with testnet ETH and rerun." >&2
             exit 1
           fi
 
