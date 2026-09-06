@@ -42,16 +42,34 @@ Deno.serve(async (req: Request) => {
     const network = await provider.getNetwork();
     if (Number(network.chainId) !== CHAIN_ID) return json(503, { error: `Bridge RPC is on chain ${network.chainId}; expected ${CHAIN_ID}` });
 
+    const { data: config, error: configError } = await service
+      .from("crypto_chain_config")
+      .select("chain_id,token_address,unlock_enabled,minter_address,deployment_verified_at")
+      .eq("id", true)
+      .single();
+    if (configError) throw configError;
+    if (Number(config?.chain_id) !== CHAIN_ID) return json(503, { error: "Configured FAV chain is not Base Sepolia" });
+    if (!config?.token_address || !config?.deployment_verified_at) return json(503, { error: "FAV testnet deployment is not verified" });
+    if (!config?.unlock_enabled) return json(200, { processed: false, reason: "crypto-unlock-disabled" });
+    if (!config?.minter_address) return json(503, { error: "FAV testnet minter is not recorded" });
+
+    const signer = new Wallet(minterPrivateKey, provider);
+    if (signer.address.toLowerCase() !== String(config.minter_address).toLowerCase()) {
+      return json(503, { error: "Configured minter secret does not match the verified FAV minter address" });
+    }
+
     const { data: unlock, error: claimError } = await service.rpc("claim_next_crypto_unlock");
     if (claimError) throw claimError;
     if (!unlock) return json(200, { processed: false, reason: "queue-empty-or-disabled" });
 
     requestId = String(unlock.id);
     if (Number(unlock.chain_id) !== CHAIN_ID) throw new Error("Unlock request is not for Base Sepolia");
+    if (String(unlock.token_address).toLowerCase() !== String(config.token_address).toLowerCase()) {
+      throw new Error("Unlock request token does not match the verified FAV deployment");
+    }
 
-    const signer = new Wallet(minterPrivateKey, provider);
-    const contract = new Contract(String(unlock.token_address), abi, signer);
-    const code = await provider.getCode(String(unlock.token_address));
+    const contract = new Contract(String(config.token_address), abi, signer);
+    const code = await provider.getCode(String(config.token_address));
     if (!code || code === "0x") throw new Error("Configured FAV token address has no contract code");
 
     const minterRole = await contract.MINTER_ROLE();
