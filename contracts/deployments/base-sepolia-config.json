@@ -8,10 +8,12 @@
   "initialCapMicroFav": 10000000000000,
   "initialSupplyFav": 0,
   "adminAddress": "0xB15bd11EBF03feceE5F92F260def797542E0f570",
+  "expectedTestnetDeployerAddress": "0xF58C2b4d86BeFE571b62B0cCbC6f947B48BC7b41",
   "minterStrategy": "disposable-testnet-deployer-until-dedicated-relayer",
   "unlockFeeBps": 250,
   "buyerMarketplaceFeeBps": 300,
   "sellerMarketplaceFeeBps": 300,
+  "unlockMaturityHours": 120,
   "unlockEnabledByDefault": false,
   "mainnetDeploymentAllowed": false
 }
