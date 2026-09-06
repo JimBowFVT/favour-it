@@ -42,6 +42,13 @@ export function calculateCryptoUnlockQuote(grossMicroFav, feeBps = 250) {
   };
 }
 
+export function resolveEip1193Provider(provider = null) {
+  if (provider?.request) return provider;
+  const injected = typeof window !== 'undefined' ? window.ethereum : null;
+  if (injected?.request) return injected;
+  return null;
+}
+
 export async function getCryptoChainStatus() {
   const { data, error } = await supabase.rpc('get_crypto_chain_status');
   if (error) throw error;
@@ -90,9 +97,9 @@ async function switchToBaseSepolia(ethereum) {
   }
 }
 
-export async function connectAndVerifyCryptoWallet() {
-  const ethereum = typeof window !== 'undefined' ? window.ethereum : null;
-  if (!ethereum?.request) throw new Error('No compatible browser wallet was detected.');
+export async function connectAndVerifyCryptoWallet(provider = null) {
+  const ethereum = resolveEip1193Provider(provider);
+  if (!ethereum) throw new Error('No compatible wallet provider is available yet.');
 
   const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
   const address = String(accounts?.[0] || '').toLowerCase();
