@@ -20,6 +20,7 @@ contract FavouritToken is ERC20Pausable, AccessControl {
     error ZeroAddress();
     error InvalidInitialCap();
     error InvalidMintReference();
+    error ZeroMintAmount();
     error MintReferenceAlreadyProcessed(bytes32 mintRef);
     error CapNotIncreased(uint256 currentCap, uint256 requestedCap);
     error MaxSupplyExceeded(uint256 cap, uint256 requestedSupply);
@@ -53,6 +54,7 @@ contract FavouritToken is ERC20Pausable, AccessControl {
     /// @param amount Net micro-FAV to mint after the configured unlock fee.
     function mintWithReference(bytes32 mintRef, address to, uint256 amount) external onlyRole(MINTER_ROLE) {
         if (mintRef == bytes32(0)) revert InvalidMintReference();
+        if (amount == 0) revert ZeroMintAmount();
         if (processedMintReferences[mintRef]) revert MintReferenceAlreadyProcessed(mintRef);
 
         uint256 supply = totalSupply();
