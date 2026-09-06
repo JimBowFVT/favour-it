@@ -6,7 +6,7 @@ import { statusLabels } from './data/orders';
 import { getMyWallet, formatFav } from './lib/wallet';
 import { createOrderAndHoldFav, getMyOrders, releaseOrder, refundOrder } from './lib/orders';
 import { getEconomyConfig } from './lib/economy';
-import { getPublishedDeals, getDealById, createDeal as createDealRemote } from './lib/deals';
+import { getPublishedDeals, getMyDeals, getDealById, createDeal as createDealRemote, updateDeal as updateDealRemote, setDealStatus } from './lib/deals';
 import { getMyFavoriteDealIds, setFavorite } from './lib/favorites';
 import { signOut } from './lib/auth';
 import FavouritLoader from './components/FavouritLoader';
@@ -15,8 +15,9 @@ import PremiumPage from './components/PremiumPage';
 import ExploreDealsPage from './components/ExploreDealsPage';
 import DealDetailPage from './components/DealDetailPage';
 import CreateDealPage from './components/CreateDealPage';
+import ManageDealsPage from './components/ManageDealsPage';
 
-const navItems = ['Home', 'Explore', 'Orders', 'Community', 'Upgrade'];
+const navItems = ['Home', 'Explore', 'Orders', 'My Deals', 'Community', 'Upgrade'];
 const DEFAULT_ECONOMY = { buyer_marketplace_fee_bps: 300, seller_marketplace_fee_bps: 300, crypto_unlock_fee_bps: 250 };
 
 function Logo() { return <div className="logo"><span>Favour</span><i>it</i></div>; }
@@ -39,10 +40,10 @@ function Home({ fav, onExplore, onCreate, rewardMessage }) {
   return <section className="page-section home-page"><div className="hero"><div><div className="eyebrow">WELCOME TO FAVOURIT</div><h1>Your skills are your <span>currency.</span></h1><p>Offer what you know, earn FAV, and use it to access skills from the rest of the community — with every purchase protected by escrow.</p><div className="hero-actions"><button className="primary" onClick={onExplore}>Explore marketplace →</button><button className="secondary" onClick={onCreate}>Offer a service</button></div>{rewardMessage && <div className="reward-banner">✦ {rewardMessage}</div>}</div><div className="hero-orb"><strong>{formatFav(fav)}</strong><span>FAV AVAILABLE</span></div></div><div className="value-grid"><div><b>◈</b><h3>You are secured</h3><p>Payments stay protected in escrow until the order is completed.</p></div><div><b>↔</b><h3>Dealmaking</h3><p>Turn an approved remote professional service into something another member can buy.</p></div><div><b>✦</b><h3>Use our coin</h3><p>FAV moves through the marketplace as purchasing power.</p></div></div></section>;
 }
 
-function Profile({ fav, deals, orders, onCreate, onOrders, session, onSignOut, usernameStatus }) {
+function Profile({ fav, deals, orders, onCreate, onOrders, onManageDeals, session, onSignOut, usernameStatus }) {
   const name = session?.user?.user_metadata?.display_name || session?.user?.email?.split('@')[0] || 'Favourit member';
   const initials = initialsFor(name);
-  return <section className="page-section"><div className="profile-hero"><div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>✓ Account verified</span><span>◈ Favourit member</span></div></div></div><button className="secondary" onClick={onSignOut}>Sign out</button></div><div className="profile-stats"><div><small>FAV BALANCE</small><strong>{formatFav(fav)}</strong><span>FAV</span></div><div><small>DEALS PUBLISHED</small><strong>{deals.filter(deal => deal.sellerId === session?.user?.id).length}</strong><span>services</span></div><div><small>ORDERS</small><strong>{orders.length}</strong><span>purchases</span></div><div><small>ACCOUNT</small><strong>Active</strong><span>member</span></div></div><div className="profile-grid"><div className="profile-panel"><div className="panel-heading"><h2>Favourit ID</h2></div><div className="transaction"><span className="tx-icon positive">@</span><div><strong>@{usernameStatus?.username || 'username'}</strong><small>Your public Favourit handle</small></div><b>30 day limit</b></div><p className="panel-copy">Your @ stays with your account. Use the @ control beside Messages to change it when the 30-day window opens.</p></div><div className="profile-panel"><div className="panel-heading"><h2>Wallet</h2></div><div className="transaction"><span className="tx-icon positive">+</span><div><strong>Available FAV</strong><small>Live wallet balance</small></div><b>{formatFav(fav)} FAV</b></div></div><div className="profile-panel"><div className="panel-heading"><h2>Orders</h2></div><p className="panel-copy">Your purchases are funded through protected FAV escrow.</p><button className="primary full" onClick={onOrders}>View my orders →</button><button className="secondary full" onClick={onCreate}>Offer a new service →</button></div></div></section>;
+  return <section className="page-section"><div className="profile-hero"><div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>✓ Account verified</span><span>◈ Favourit member</span></div></div></div><button className="secondary" onClick={onSignOut}>Sign out</button></div><div className="profile-stats"><div><small>FAV BALANCE</small><strong>{formatFav(fav)}</strong><span>FAV</span></div><div><small>DEALS PUBLISHED</small><strong>{deals.filter(deal => deal.sellerId === session?.user?.id).length}</strong><span>services</span></div><div><small>ORDERS</small><strong>{orders.length}</strong><span>purchases</span></div><div><small>ACCOUNT</small><strong>Active</strong><span>member</span></div></div><div className="profile-grid"><div className="profile-panel"><div className="panel-heading"><h2>Favourit ID</h2></div><div className="transaction"><span className="tx-icon positive">@</span><div><strong>@{usernameStatus?.username || 'username'}</strong><small>Your public Favourit handle</small></div><b>30 day limit</b></div><p className="panel-copy">Your @ stays with your account. Use the @ control beside Messages to change it when the 30-day window opens.</p></div><div className="profile-panel"><div className="panel-heading"><h2>Wallet</h2></div><div className="transaction"><span className="tx-icon positive">+</span><div><strong>Available FAV</strong><small>Live wallet balance</small></div><b>{formatFav(fav)} FAV</b></div></div><div className="profile-panel"><div className="panel-heading"><h2>Seller workspace</h2></div><p className="panel-copy">Manage listings separately from historical orders and immutable purchase snapshots.</p><button className="primary full" onClick={onManageDeals}>Manage my deals →</button><button className="secondary full" onClick={onCreate}>Offer a new service →</button><button className="secondary full" onClick={onOrders}>View my orders →</button></div></div></section>;
 }
 
 function App({ initialWallet, session, rewardMessage, usernameStatus }) {
@@ -52,8 +53,10 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   const [economy, setEconomy] = useState(DEFAULT_ECONOMY);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [editingDeal, setEditingDeal] = useState(null);
   const [toast, setToast] = useState('');
   const [deals, setDeals] = useState(seedDeals);
+  const [myDeals, setMyDeals] = useState([]);
   const [orders, setOrders] = useState([]);
   const [favorites, setFavorites] = useState(new Set());
   const [busy, setBusy] = useState(false);
@@ -67,6 +70,7 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   const go = item => {
     setSelectedDeal(null);
     setSelectedOrder(null);
+    setEditingDeal(null);
     setActive(item);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -81,9 +85,10 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     (async () => {
       setLoading(true);
       try {
-        const [remoteDeals, remoteOrders, wallet, favoriteIds, economyConfig] = await Promise.all([getPublishedDeals(), getMyOrders(), getMyWallet(), getMyFavoriteDealIds(), getEconomyConfig()]);
+        const [remoteDeals, sellerDeals, remoteOrders, wallet, favoriteIds, economyConfig] = await Promise.all([getPublishedDeals(), getMyDeals(), getMyOrders(), getMyWallet(), getMyFavoriteDealIds(), getEconomyConfig()]);
         if (cancelled) return;
         if (remoteDeals.length) setDeals(remoteDeals);
+        setMyDeals(sellerDeals);
         setOrders(remoteOrders);
         setFav(Number(wallet?.available_fav || 0));
         setFavorites(new Set([...favoriteIds].map(String)));
@@ -109,6 +114,7 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
         if (!deal) throw new Error('This deal is no longer available.');
         setActive('Explore');
         setSelectedOrder(null);
+        setEditingDeal(null);
         setSelectedDeal(deal);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } catch (error) {
@@ -185,11 +191,58 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     setBusy(true);
     try {
       const deal = await createDealRemote(form);
-      setDeals(current => [deal, ...current]);
+      setDeals(current => [deal, ...current.filter(item => String(item.id) !== String(deal.id))]);
+      setMyDeals(current => [deal, ...current.filter(item => String(item.id) !== String(deal.id))]);
       notify('Deal published with protected packages.');
-      go('Explore');
+      go('My Deals');
     } catch (error) {
       notify(error.message || 'Could not publish your deal.');
+    } finally { setBusy(false); }
+  };
+
+  const openDealEditor = deal => {
+    if (!deal || deal.status === 'archived') return;
+    setSelectedDeal(null);
+    setSelectedOrder(null);
+    setEditingDeal(deal);
+    setActive('Edit Deal');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const saveDeal = async form => {
+    if (!editingDeal || busy) return;
+    setBusy(true);
+    try {
+      const updated = await updateDealRemote(editingDeal.id, form);
+      const merged = { ...editingDeal, ...updated };
+      setMyDeals(current => current.map(item => String(item.id) === String(merged.id) ? merged : item));
+      if (merged.status === 'published') {
+        setDeals(current => current.map(item => String(item.id) === String(merged.id) ? { ...item, ...merged } : item));
+      }
+      notify('Deal changes saved. Existing order snapshots were not changed.');
+      go('My Deals');
+    } catch (error) {
+      notify(error.message || 'Could not update your deal.');
+    } finally { setBusy(false); }
+  };
+
+  const changeDealStatus = async (deal, status) => {
+    if (!deal || busy) return;
+    setBusy(true);
+    try {
+      const updated = await setDealStatus(deal.id, status);
+      const merged = { ...deal, ...updated };
+      setMyDeals(current => current.map(item => String(item.id) === String(merged.id) ? merged : item));
+      if (status === 'published') {
+        const publicDeal = await getDealById(merged.id);
+        setDeals(current => [publicDeal || merged, ...current.filter(item => String(item.id) !== String(merged.id))]);
+        notify('Deal published and visible to buyers.');
+      } else {
+        setDeals(current => current.filter(item => String(item.id) !== String(merged.id)));
+        notify(status === 'paused' ? 'Deal paused and hidden from new buyers.' : 'Deal archived. Existing orders remain in history.');
+      }
+    } catch (error) {
+      notify(error.message || 'Could not update deal status.');
     } finally { setBusy(false); }
   };
 
@@ -201,13 +254,15 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   else if (active === 'Home') content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} rewardMessage={rewardMessage} />;
   else if (active === 'Explore') content = <ExploreDealsPage query={query} setQuery={setQuery} onOpen={setSelectedDeal} onCreate={() => go('Create Deal')} deals={deals} favorites={favorites} onFavorite={toggleFavorite} />;
   else if (active === 'Orders') content = <Orders orders={orders} onOpen={setSelectedOrder} fav={fav} />;
+  else if (active === 'My Deals') content = <ManageDealsPage deals={myDeals} onCreate={() => go('Create Deal')} onEdit={openDealEditor} onStatus={changeDealStatus} busy={busy} />;
   else if (active === 'Community') content = <Community />;
   else if (active === 'Upgrade') content = <PremiumPage fav={fav} />;
-  else if (active === 'Profile') content = <Profile fav={fav} deals={deals} orders={orders} onCreate={() => go('Create Deal')} onOrders={() => go('Orders')} session={session} onSignOut={logout} usernameStatus={usernameStatus} />;
-  else if (active === 'Create Deal') content = <CreateDealPage onBack={() => go('Explore')} onCreated={publish} busy={busy} />;
+  else if (active === 'Profile') content = <Profile fav={fav} deals={deals} orders={orders} onCreate={() => go('Create Deal')} onOrders={() => go('Orders')} onManageDeals={() => go('My Deals')} session={session} onSignOut={logout} usernameStatus={usernameStatus} />;
+  else if (active === 'Create Deal') content = <CreateDealPage key="new-deal" onBack={() => go('My Deals')} onCreated={publish} busy={busy} />;
+  else if (active === 'Edit Deal' && editingDeal) content = <CreateDealPage key={editingDeal.id} initialDeal={editingDeal} onBack={() => go('My Deals')} onCreated={saveDeal} busy={busy} />;
   else content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} />;
 
-  return <div className="app-shell"><header className="topbar"><button className="brand-button" onClick={() => go('Home')}><Logo /></button><nav>{navItems.map(item => <button key={item} className={active === item ? 'active' : ''} onClick={() => go(item)}>{item}</button>)}</nav><div className="top-actions"><div className="balance"><small>FAV</small><strong>{formatFav(fav)}</strong></div><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div></header><main>{loading ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>{toast && <div className="toast" role="status">{toast}</div>}</div>;
+  return <div className="app-shell"><header className="topbar"><button className="brand-button" onClick={() => go('Home')}><Logo /></button><nav>{navItems.map(item => <button key={item} className={active === item || (item === 'My Deals' && ['Create Deal', 'Edit Deal'].includes(active)) ? 'active' : ''} onClick={() => go(item)}>{item}</button>)}</nav><div className="top-actions"><div className="balance"><small>FAV</small><strong>{formatFav(fav)}</strong></div><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div></header><main>{loading ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>{toast && <div className="toast" role="status">{toast}</div>}</div>;
 }
 
 export default App;
