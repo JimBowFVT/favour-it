@@ -15,6 +15,29 @@ const INITIAL_PACKAGES = [
   { tier: 'premium', enabled: false, title: 'Premium', description: '', price: '', deliveryDays: 7, revisions: 3, sessionMinutes: 120 },
 ];
 
+function initialPackagesFor(deal) {
+  if (!deal?.packages?.length) return INITIAL_PACKAGES.map(item => ({ ...item }));
+  const byTier = Object.fromEntries(deal.packages.map(item => [item.tier, item]));
+  return INITIAL_PACKAGES.map(base => {
+    const existing = byTier[base.tier];
+    if (!existing) return { ...base, enabled: base.tier === 'basic' };
+    return {
+      ...base,
+      enabled: true,
+      title: existing.title || base.title,
+      description: existing.description || '',
+      price: String(existing.price ?? ''),
+      deliveryDays: Number(existing.deliveryDays || base.deliveryDays),
+      revisions: Number(existing.revisions ?? base.revisions),
+      sessionMinutes: Number(existing.sessionMinutes || base.sessionMinutes),
+    };
+  });
+}
+
+function initialRows(items, emptyRow) {
+  return Array.isArray(items) && items.length ? items.map(item => ({ ...item })) : [{ ...emptyRow }];
+}
+
 function PackageEditor({ item, serviceType, onChange, onToggle }) {
   const isBasic = item.tier === 'basic';
   return <article className={`create-package ${item.enabled ? 'enabled' : 'disabled'}`}>
@@ -33,15 +56,16 @@ function PackageEditor({ item, serviceType, onChange, onToggle }) {
   </article>;
 }
 
-export default function CreateDealPage({ onBack, onCreated, busy }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
-  const [serviceType, setServiceType] = useState('deliverable');
-  const [description, setDescription] = useState('');
-  const [buyerRequirements, setBuyerRequirements] = useState('');
-  const [packages, setPackages] = useState(INITIAL_PACKAGES);
-  const [faqs, setFaqs] = useState([{ question: '', answer: '' }]);
-  const [portfolio, setPortfolio] = useState([{ title: '', url: '' }]);
+export default function CreateDealPage({ onBack, onCreated, busy, initialDeal = null }) {
+  const isEditing = Boolean(initialDeal?.id);
+  const [title, setTitle] = useState(initialDeal?.title || '');
+  const [category, setCategory] = useState(initialDeal?.category || '');
+  const [serviceType, setServiceType] = useState(initialDeal?.serviceType || 'deliverable');
+  const [description, setDescription] = useState(initialDeal?.description || '');
+  const [buyerRequirements, setBuyerRequirements] = useState(initialDeal?.buyerRequirements || '');
+  const [packages, setPackages] = useState(() => initialPackagesFor(initialDeal));
+  const [faqs, setFaqs] = useState(() => initialRows(initialDeal?.faqs, { question: '', answer: '' }));
+  const [portfolio, setPortfolio] = useState(() => initialRows(initialDeal?.portfolio, { title: '', url: '' }));
 
   const selectedCategory = serviceCategories.find(item => item.label === category);
   const selectedFamily = serviceFamilies.find(item => item.id === selectedCategory?.family);
@@ -52,7 +76,7 @@ export default function CreateDealPage({ onBack, onCreated, busy }) {
   const patchFaq = (index, key, value) => setFaqs(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
   const patchPortfolio = (index, key, value) => setPortfolio(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
 
-  const packagesValid = activePackages.length > 0 && activePackages.every(item => item.title.trim().length >= 2 && Number(item.price) > 0 && Number(item.deliveryDays) >= 1 && Number(item.revisions) >= 0);
+  const packagesValid = activePackages.length > 0 && activePackages.some(item => item.tier === 'basic') && activePackages.every(item => item.title.trim().length >= 2 && Number(item.price) > 0 && Number(item.deliveryDays) >= 1 && Number(item.revisions) >= 0);
   const canPublish = title.trim().length >= 10 && description.trim().length >= 20 && category && packagesValid && !busy;
 
   const submit = () => {
@@ -78,10 +102,10 @@ export default function CreateDealPage({ onBack, onCreated, busy }) {
   };
 
   return <section className="page-section create-deal-page">
-    <button className="back-button" type="button" onClick={onBack}>← Back to Explore</button>
+    <button className="back-button" type="button" onClick={onBack}>← Back to My Deals</button>
     <div className="create-deal-hero">
-      <div><div className="eyebrow">CREATE A DEAL</div><h1>Package your work so buyers know <span>exactly what they get.</span></h1><p>Choose an approved remote service, define the scope and sell one to three clear packages protected by Favourit.</p></div>
-      <div className="create-deal-progress"><span className="done">1</span><b>Service</b><i></i><span className="done">2</span><b>Packages</b><i></i><span>3</span><b>Publish</b></div>
+      <div><div className="eyebrow">{isEditing ? 'EDIT DEAL' : 'CREATE A DEAL'}</div><h1>{isEditing ? <>Keep your listing accurate for <span>future buyers.</span></> : <>Package your work so buyers know <span>exactly what they get.</span></>}</h1><p>{isEditing ? 'Changes apply to future purchases only. Existing orders keep the package and scope snapshot captured at checkout.' : 'Choose an approved remote service, define the scope and sell one to three clear packages protected by Favourit.'}</p></div>
+      <div className="create-deal-progress"><span className="done">1</span><b>Service</b><i></i><span className="done">2</span><b>Packages</b><i></i><span>3</span><b>{isEditing ? 'Save' : 'Publish'}</b></div>
     </div>
 
     <div className="create-deal-layout">
@@ -128,8 +152,8 @@ export default function CreateDealPage({ onBack, onCreated, busy }) {
         <p>{description.trim() || 'Add a clear description so buyers know what they are purchasing.'}</p>
         <div className="create-summary-type"><small>Service type</small><strong>{SERVICE_TYPES.find(item => item.id === serviceType)?.label}</strong></div>
         <div className="create-summary-packages">{activePackages.map(item => <div key={item.tier}><span>{item.title || item.tier}</span><strong>{item.price ? `${item.price} FAV` : 'Set price'}</strong><small>{item.deliveryDays} day{item.deliveryDays === 1 ? '' : 's'} · {item.revisions} revisions</small></div>)}</div>
-        <div className="create-summary-policy"><strong>Favourit marketplace</strong><span>Only approved remote professional services can be published. Clear scope makes escrow and disputes fairer for both sides.</span></div>
-        <button className="primary full" type="button" disabled={!canPublish} onClick={submit}>{busy ? 'Publishing…' : 'Publish deal →'}</button>
+        <div className="create-summary-policy"><strong>{isEditing ? 'Existing orders stay unchanged' : 'Favourit marketplace'}</strong><span>{isEditing ? 'Editing this listing never rewrites package snapshots already attached to funded orders.' : 'Only approved remote professional services can be published. Clear scope makes escrow and disputes fairer for both sides.'}</span></div>
+        <button className="primary full" type="button" disabled={!canPublish} onClick={submit}>{busy ? (isEditing ? 'Saving…' : 'Publishing…') : (isEditing ? 'Save changes →' : 'Publish deal →')}</button>
         {!packagesValid && <small className="create-summary-error">Every active package needs a name, price, delivery time and valid revision count.</small>}
       </aside>
     </div>
