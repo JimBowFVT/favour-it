@@ -12,13 +12,18 @@ const normalizeOrder = (row) => {
   return {
     id: row.id,
     title: row.title || snapshot.deal_title || 'Favourit order',
+    category: row.category || snapshot.deal_category || '',
     seller: row.seller_name || row.seller || 'Favourit seller',
+    sellerUsername: row.seller_username || '',
     sellerId: row.seller_id,
+    buyer: row.buyer_name || row.buyer || 'Favourit buyer',
+    buyerUsername: row.buyer_username || '',
     buyerId: row.buyer_id,
     dealId: row.deal_id,
     amount: amountMicro / MICRO_FAV,
     fee: sellerFeeMicro / MICRO_FAV,
     sellerFee: sellerFeeMicro / MICRO_FAV,
+    sellerPayout: Math.max(0, amountMicro - sellerFeeMicro) / MICRO_FAV,
     buyerFee: buyerFeeMicro / MICRO_FAV,
     buyerTotal: buyerTotalMicro / MICRO_FAV,
     status: row.status,
@@ -31,6 +36,7 @@ const normalizeOrder = (row) => {
     dealDescription: snapshot.deal_description || '',
     buyerRequirements: snapshot.buyer_requirements || '',
     scopeCapturedAt: snapshot.captured_at || null,
+    review: row.review || null,
     createdAt: row.created_at,
     updated: row.updated_at || row.created_at,
   };
@@ -77,19 +83,39 @@ export async function getMyOrders() {
   if (error) throw error;
 
   const rows = data || [];
-  const sellerIds = [...new Set(rows.map(row => row.seller_id).filter(Boolean))];
+  const participantIds = [...new Set(rows.flatMap(row => [row.seller_id, row.buyer_id]).filter(Boolean))];
+  const orderIds = rows.map(row => row.id).filter(Boolean);
   let profileMap = {};
+  let reviewMap = {};
 
-  if (sellerIds.length) {
-    const { data: profiles, error: profileError } = await supabase.from('profiles').select('id, display_name').in('id', sellerIds);
+  if (participantIds.length) {
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, display_name, username')
+      .in('id', participantIds);
     if (profileError) throw profileError;
-    profileMap = Object.fromEntries((profiles || []).map(profile => [profile.id, profile.display_name]));
+    profileMap = Object.fromEntries((profiles || []).map(profile => [profile.id, profile]));
+  }
+
+  if (orderIds.length) {
+    const { data: reviews, error: reviewError } = await supabase
+      .from('reviews')
+      .select('id, order_id, rating, body, created_at')
+      .in('order_id', orderIds);
+    if (reviewError) throw reviewError;
+    reviewMap = Object.fromEntries((reviews || []).map(review => [review.order_id, review]));
   }
 
   return rows.map(row => normalizeOrder({
     ...row,
     title: row.deals?.title || row.package_snapshot?.deal_title,
     category: row.deals?.category || row.package_snapshot?.deal_category,
-    seller_name: profileMap[row.seller_id],
+    seller_name: profileMap[row.seller_id]?.display_name,
+    seller_username: profileMap[row.seller_id]?.username,
+    buyer_name: profileMap[row.buyer_id]?.display_name,
+    buyer_username: profileMap[row.buyer_id]?.username,
+    review: reviewMap[row.id] || null,
   }));
 }
+
+export { normalizeOrder };
