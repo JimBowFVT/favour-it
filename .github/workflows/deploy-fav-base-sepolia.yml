@@ -21,6 +21,10 @@ jobs:
     name: Base Sepolia deployment
     runs-on: ubuntu-latest
     environment: fav-base-sepolia
+    env:
+      # A private provider may be stored as an environment secret later. For this testnet
+      # deployment only, fall back to Base's official public Sepolia endpoint.
+      BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,17 +78,39 @@ jobs:
       - name: Test contract before deployment
         run: forge test --root contracts -vv
 
+      - name: Preflight deployer and Base Sepolia balance
+        env:
+          FAV_DEPLOYER_PRIVATE_KEY: ${{ secrets.FAV_TESTNET_DEPLOYER_PRIVATE_KEY }}
+        run: |
+          test -n "$FAV_DEPLOYER_PRIVATE_KEY" || {
+            echo "Missing fav-base-sepolia environment secret: FAV_TESTNET_DEPLOYER_PRIVATE_KEY" >&2
+            exit 1
+          }
+
+          chain_id="$(cast chain-id --rpc-url "$BASE_SEPOLIA_RPC_URL")"
+          test "$chain_id" = "84532" || {
+            echo "RPC returned chain id $chain_id; expected Base Sepolia 84532." >&2
+            exit 1
+          }
+
+          deployer="$(cast wallet address --private-key "$FAV_DEPLOYER_PRIVATE_KEY")"
+          balance_wei="$(cast balance "$deployer" --rpc-url "$BASE_SEPOLIA_RPC_URL")"
+          echo "Disposable testnet deployer: $deployer"
+          echo "Base Sepolia ETH balance (wei): $balance_wei"
+
+          if [ "$balance_wei" = "0" ]; then
+            echo "The disposable deployer has no Base Sepolia ETH. Fund the public address above with testnet ETH and rerun." >&2
+            exit 1
+          fi
+
       - name: Deploy 10,000,000-cap FAV
         env:
           FAV_MINTER_ADDRESS: ${{ inputs.minter_address }}
           FAV_DEPLOYER_PRIVATE_KEY: ${{ secrets.FAV_TESTNET_DEPLOYER_PRIVATE_KEY }}
-          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
           DEPLOYMENT_OUTPUT: ${{ github.workspace }}/contracts/deployments/base-sepolia-latest.json
         run: bash scripts/deploy-fav-base-sepolia.sh
 
       - name: Verify deployed bytecode configuration
-        env:
-          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
         run: |
           export FAV_TOKEN_ADDRESS="$(jq -r '.tokenAddress' contracts/deployments/base-sepolia-latest.json)"
           export FAV_MINTER_ADDRESS="$(jq -r '.minterAddress' contracts/deployments/base-sepolia-latest.json)"
