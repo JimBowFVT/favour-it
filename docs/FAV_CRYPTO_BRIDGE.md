@@ -28,9 +28,15 @@ The confirmed initial testnet admin is the public EVM address:
 
 It receives `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, and `CAP_MANAGER_ROLE`. The private key for this address must never be stored in Supabase, GitHub Actions, application environment variables, or source control.
 
-For testnet automation, `MINTER_ROLE` defaults to the disposable Base Sepolia deployer address when no dedicated minter is supplied. This keeps the admin wallet separate from server-side minting. Before mainnet, the admin/cap/pause roles should move to a multisig/timelock and minting should use a separately protected relayer.
+The locked disposable Base Sepolia deployer/minter for this phase is:
 
-The machine-readable policy is committed at `contracts/deployments/base-sepolia-config.json`. The deploy script reads this policy directly and rejects a caller-supplied admin address that does not match it.
+`0xF58C2b4d86BeFE571b62B0cCbC6f947B48BC7b41`
+
+Its private key is stored only as the protected `fav-base-sepolia` GitHub environment secret `FAV_TESTNET_DEPLOYER_PRIVATE_KEY`. The deployment workflow derives the public address from that secret and aborts if it does not exactly match the locked address above. The deployer must remain distinct from the long-term admin.
+
+For testnet automation, `MINTER_ROLE` defaults to this disposable Base Sepolia deployer address when no dedicated minter is supplied. Before mainnet, the admin/cap/pause roles should move to a multisig/timelock and minting should use a separately protected relayer.
+
+The machine-readable policy is committed at `contracts/deployments/base-sepolia-config.json`. The deploy script reads this policy directly and rejects an unexpected admin or deployer identity.
 
 ## Wallet verification
 
@@ -105,9 +111,9 @@ Do not use the long-term admin wallet private key as an application secret.
 
 ## Deployment
 
-`scripts/deploy-fav-base-sepolia.sh` hard-stops unless the RPC reports chain id `84532`. The 10,000,000 FAV cap and confirmed admin address are read from the committed deployment policy, not free-form command-line values. If no minter is explicitly supplied, the disposable deployer becomes the testnet minter.
+`scripts/deploy-fav-base-sepolia.sh` hard-stops unless the RPC reports chain id `84532`. The 10,000,000 FAV cap, confirmed admin address, confirmed disposable deployer address and 120-hour maturity policy are read from committed policy. The deployer private key must resolve exactly to the locked disposable testnet deployer, and the deployer must have Base Sepolia ETH for gas.
 
-The GitHub workflow `.github/workflows/deploy-fav-base-sepolia.yml` is manual and uses a protected environment. It requires the explicit phrase `DEPLOY_FAV_BASE_SEPOLIA`; there is no editable admin-address input. Its deployer key should be disposable/testnet-only and funded only with Base Sepolia ETH.
+The GitHub workflow `.github/workflows/deploy-fav-base-sepolia.yml` is manual and uses the protected `fav-base-sepolia` environment. It requires the explicit phrase `DEPLOY_FAV_BASE_SEPOLIA`; there is no editable admin-address or deployer-address input. If no dedicated minter is supplied, the locked disposable deployer becomes the testnet minter.
 
 After deployment the workflow runs `scripts/verify-fav-base-sepolia.sh`, which checks:
 
@@ -137,19 +143,21 @@ The live database also keeps a service-only `fav_crypto_config_audit_log` for ch
 
 ## End-to-end test sequence
 
-1. Deploy the contract on Base Sepolia.
-2. Verify the contract with the read-only deployment verifier.
-3. Record contract address + deployment transaction in Supabase.
-4. Record the deployed admin/minter role addresses.
-5. Mark the deployment verified only after the read-only verifier passes.
-6. Confirm token name, symbol, decimals, max supply, zero initial supply and roles independently.
-7. Confirm the 5-day seller-earnings maturity policy is live.
-8. Run a wallet-link test.
-9. Seed a controlled test seller earning and corresponding maturity lot.
-10. Enable crypto unlock only for testnet.
-11. Run one small unlock end-to-end.
-12. Wait for the configured confirmation count.
-13. Verify internal provenance + platform fee + on-chain supply reconcile exactly.
+1. Fund the locked disposable deployer with Base Sepolia test ETH.
+2. Run the manual deployment workflow and let preflight verify the deployer secret, chain id and gas balance.
+3. Deploy the contract on Base Sepolia.
+4. Verify the contract with the read-only deployment verifier.
+5. Record contract address + deployment transaction in Supabase.
+6. Record the deployed admin/minter role addresses.
+7. Mark the deployment verified only after the read-only verifier passes.
+8. Confirm token name, symbol, decimals, max supply, zero initial supply and roles independently.
+9. Confirm the 5-day seller-earnings maturity policy is live.
+10. Run a wallet-link test.
+11. Seed a controlled test seller earning and corresponding maturity lot.
+12. Enable crypto unlock only for testnet.
+13. Run one small unlock end-to-end.
+14. Wait for the configured confirmation count.
+15. Verify internal provenance + platform fee + on-chain supply reconcile exactly.
 
 ## Not in this phase
 
