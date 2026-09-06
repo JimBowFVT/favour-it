@@ -17,12 +17,18 @@ fail() {
   exit 1
 }
 
+# Recent Foundry versions annotate large integers (for example: "10000000000000 [1e13]").
+# Verification compares the canonical integer token, not the optional human annotation.
+uint_value() {
+  awk '{print $1}'
+}
+
 command -v cast >/dev/null 2>&1 || fail "Foundry cast is required"
 [[ "$TOKEN_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_TOKEN_ADDRESS is required and must be a valid EVM address"
 [[ "$ADMIN_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_ADMIN_ADDRESS is invalid"
 [[ "$MINTER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_MINTER_ADDRESS is required and must be a valid EVM address"
 
-CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL")"
+CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL" | uint_value)"
 [[ "$CHAIN_ID" == "$EXPECTED_CHAIN_ID" ]] || fail "RPC chain id is ${CHAIN_ID}; expected Base Sepolia ${EXPECTED_CHAIN_ID}"
 
 TOKEN_ADDRESS="$(cast to-check-sum-address "$TOKEN_ADDRESS")"
@@ -31,9 +37,9 @@ MINTER_ADDRESS="$(cast to-check-sum-address "$MINTER_ADDRESS")"
 
 NAME="$(cast call "$TOKEN_ADDRESS" 'name()(string)' --rpc-url "$RPC_URL" | tr -d '"')"
 SYMBOL="$(cast call "$TOKEN_ADDRESS" 'symbol()(string)' --rpc-url "$RPC_URL" | tr -d '"')"
-DECIMALS="$(cast call "$TOKEN_ADDRESS" 'decimals()(uint8)' --rpc-url "$RPC_URL")"
-MAX_SUPPLY="$(cast call "$TOKEN_ADDRESS" 'maxSupply()(uint256)' --rpc-url "$RPC_URL")"
-TOTAL_SUPPLY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL")"
+DECIMALS="$(cast call "$TOKEN_ADDRESS" 'decimals()(uint8)' --rpc-url "$RPC_URL" | uint_value)"
+MAX_SUPPLY="$(cast call "$TOKEN_ADDRESS" 'maxSupply()(uint256)' --rpc-url "$RPC_URL" | uint_value)"
+TOTAL_SUPPLY="$(cast call "$TOKEN_ADDRESS" 'totalSupply()(uint256)' --rpc-url "$RPC_URL" | uint_value)"
 DEFAULT_ADMIN_ROLE="$(cast call "$TOKEN_ADDRESS" 'DEFAULT_ADMIN_ROLE()(bytes32)' --rpc-url "$RPC_URL")"
 PAUSER_ROLE="$(cast call "$TOKEN_ADDRESS" 'PAUSER_ROLE()(bytes32)' --rpc-url "$RPC_URL")"
 CAP_MANAGER_ROLE="$(cast call "$TOKEN_ADDRESS" 'CAP_MANAGER_ROLE()(bytes32)' --rpc-url "$RPC_URL")"

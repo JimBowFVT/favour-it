@@ -33,6 +33,7 @@ jobs:
         run: |
           bash -n scripts/deploy-fav-base-sepolia.sh
           bash -n scripts/verify-fav-base-sepolia.sh
+          bash -n scripts/test-fav-local-e2e.sh
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -44,12 +45,18 @@ jobs:
           assert policy['initialCapMicroFav'] == 10_000_000_000_000
           assert policy['initialSupplyFav'] == 0
           assert policy['adminAddress'].lower() == '0xb15bd11ebf03fecee5f92f260def797542e0f570'
+          assert policy['expectedTestnetDeployerAddress'].lower() == '0xf58c2b4d86befe571b62b0ccbc6f947b48bc7b41'
+          assert policy['adminAddress'].lower() != policy['expectedTestnetDeployerAddress'].lower()
           assert policy['unlockFeeBps'] == 250
           assert policy['buyerMarketplaceFeeBps'] == 300
           assert policy['sellerMarketplaceFeeBps'] == 300
+          assert policy['unlockMaturityHours'] == 120
           assert policy['unlockEnabledByDefault'] is False
           assert policy['mainnetDeploymentAllowed'] is False
           PY
+
+      - name: Run local FAV bridge E2E
+        run: bash scripts/test-fav-local-e2e.sh
 
       - name: Setup Node
         uses: actions/setup-node@v4
