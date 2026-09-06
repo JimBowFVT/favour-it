@@ -8,8 +8,9 @@ This directory contains Favourit's optional on-chain layer. Marketplace balances
 - Initial max supply: **10,000,000 FAV**.
 - Precision: **6 decimals**, exactly matching `1 FAV = 1,000,000 micro-FAV` in the internal ledger.
 - Initial circulating supply: **0 FAV**.
+- Locked first-phase admin: **`0xB15bd11EBF03feceE5F92F260def797542E0f570`**.
 - First-phase admin model: one externally owned admin wallet; production must migrate to stronger treasury controls before mainnet.
-- Crypto unlock remains disabled in the application until a deployment is recorded and deliberately enabled.
+- Crypto unlock remains disabled in the application until a deployment is recorded, verified, a seller-earnings maturity policy is configured, and unlock is deliberately enabled.
 
 ## Contract properties
 
@@ -32,7 +33,7 @@ The unique mint reference is a critical bridge invariant: if a worker crashes af
 - `PAUSER_ROLE`: can pause/unpause transfers and minting in an emergency.
 - `MINTER_ROLE`: can call `mintWithReference` for verified unlock requests.
 
-For Base Sepolia the minter may initially be the same wallet as the admin. Before automated production unlocks, use a dedicated protected minter/relayer rather than storing the admin wallet's private key in an application server.
+For Base Sepolia the disposable testnet deployer may initially receive `MINTER_ROLE`, while the locked public admin address receives admin/cap/pause roles. Before automated production unlocks, use a dedicated protected minter/relayer rather than storing the admin wallet's private key in an application server.
 
 ## Dependency
 
@@ -52,19 +53,20 @@ Tests cover 6-decimal precision, the 10,000,000 FAV cap, authorization, duplicat
 
 ## Base Sepolia deployment
 
-The deployment script refuses to run against any chain other than `84532` and always deploys with a `10,000,000 FAV` initial cap.
+The committed policy file `contracts/deployments/base-sepolia-config.json` is the source of truth for the network, 10M cap, and public admin address. The deployment script refuses to run on another chain or with an admin address that differs from that policy.
 
 ```bash
-export FAV_ADMIN_ADDRESS=0xYOUR_PUBLIC_ADMIN_WALLET
 export FAV_DEPLOYER_PRIVATE_KEY=0xDISPOSABLE_TESTNET_DEPLOYER_KEY
-# Optional; defaults to FAV_ADMIN_ADDRESS for the first testnet phase.
+# Optional; blank means the disposable testnet deployer receives MINTER_ROLE.
 export FAV_MINTER_ADDRESS=0xYOUR_PUBLIC_MINTER_WALLET
 
 bash scripts/deploy-fav-base-sepolia.sh
 ```
 
-Do **not** paste a private key into source code, chat, an issue, a PR, or a deployment manifest. The deployer key can be a disposable Base Sepolia-only key. The admin wallet only needs to be supplied as a public address.
+`FAV_ADMIN_ADDRESS` is not required. If supplied, it must exactly match the locked public admin policy. This prevents an accidental deployment whose privileged roles point at a typo or the wrong wallet.
 
-A manual GitHub Actions workflow is also included. It expects the repository/environment secret `FAV_TESTNET_DEPLOYER_PRIVATE_KEY` and optionally `BASE_SEPOLIA_RPC_URL`.
+Do **not** paste a private key into source code, chat, an issue, a PR, or a deployment manifest. The deployer key can be a disposable Base Sepolia-only key. The admin wallet only appears as a public address.
 
-After deployment, record the token address in `crypto_chain_config`. Recording a deployment does not automatically enable withdrawals; `set_fav_crypto_unlock_enabled(true)` is a separate protected operation.
+A manual GitHub Actions workflow is also included. It requires the exact confirmation phrase `DEPLOY_FAV_BASE_SEPOLIA`, reads the admin address from the locked policy, and expects the environment secret `FAV_TESTNET_DEPLOYER_PRIVATE_KEY`. `BASE_SEPOLIA_RPC_URL` is optional because the deployment script has the Base Sepolia public RPC as a fallback.
+
+After deployment the bytecode/roles/cap are verified before the manifest is accepted. Deployment recording does **not** automatically enable withdrawals. Unlock stays off until the verified deployment metadata, role addresses, and seller-earnings maturity gate are all satisfied.
