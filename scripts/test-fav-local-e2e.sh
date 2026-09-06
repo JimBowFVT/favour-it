@@ -71,14 +71,16 @@ DERIVED_ADMIN="$(cast wallet address --private-key "$ADMIN_KEY")"
 printf 'Deploying FAV to deterministic local chain %s...\n' "$CHAIN_ID"
 (
   cd "$ROOT_DIR"
+  # Keep --constructor-args last: current Foundry treats all following tokens as
+  # constructor values, so placing RPC flags after it can corrupt argument parsing.
   forge create \
     --root contracts \
     src/FavouritToken.sol:FavouritToken \
-    --constructor-args "$ADMIN_ADDRESS" "$MINTER_ADDRESS" "$CAP_UNITS" \
     --rpc-url "$RPC_URL" \
     --private-key "$MINTER_KEY" \
     --broadcast \
-    --json
+    --json \
+    --constructor-args "$ADMIN_ADDRESS" "$MINTER_ADDRESS" "$CAP_UNITS"
 ) >"$DEPLOY_OUTPUT"
 
 TOKEN_ADDRESS="$(python3 - "$DEPLOY_OUTPUT" <<'PY'
