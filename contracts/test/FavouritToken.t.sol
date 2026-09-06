@@ -98,6 +98,22 @@ contract FavouritTokenTest {
         require(token.totalSupply() == 0, "zero reference changed supply");
     }
 
+    function testZeroAmountCannotConsumeMintReference() public {
+        FavouritToken token = deploy(10 * UNIT);
+        bytes32 mintRef = makeRef(8);
+        (bool ok,) = address(token).call(
+            abi.encodeWithSignature(
+                "mintWithReference(bytes32,address,uint256)",
+                mintRef,
+                address(this),
+                0
+            )
+        );
+        require(!ok, "zero amount was accepted");
+        require(!token.processedMintReferences(mintRef), "zero mint consumed reference");
+        require(token.totalSupply() == 0, "zero mint changed supply");
+    }
+
     function testUnauthorizedAccountCannotMint() public {
         FavouritToken token = deploy(10 * UNIT);
         TokenActor attacker = new TokenActor();
