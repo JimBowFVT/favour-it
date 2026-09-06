@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './App.css';
 import './Prototype.css';
 import './components/OrdersMvp.css';
+import './components/DealCheckoutBrief.css';
 import { deals as seedDeals } from './data/deals';
 import { statusLabels } from './data/orders';
 import { getMyWallet, formatFav } from './lib/wallet';
@@ -96,12 +97,17 @@ function OrderDetail({ order, viewerId, onBack, onRelease, onRefund, onStart, on
   const isBuyer = order.buyerId === viewerId;
   const isSeller = order.sellerId === viewerId;
   const counterparty = isSeller ? order.buyer : order.seller;
+  const counterpartyUsername = isSeller ? order.buyerUsername : order.sellerUsername;
   const counterpartyLabel = isSeller ? 'Buyer' : 'Seller';
   const canRefund = isBuyer && ['funded', 'in_progress', 'delivered'].includes(order.status);
   const canRelease = isBuyer && order.status === 'delivered';
   const canStart = isSeller && order.status === 'funded';
   const canDeliver = isSeller && order.status === 'in_progress';
   const headlineAmount = isSeller ? order.sellerPayout : order.buyerTotal;
+  const messageCounterparty = () => {
+    if (!counterpartyUsername) return;
+    window.dispatchEvent(new CustomEvent('favourit:open-direct-message', { detail: { username: counterpartyUsername } }));
+  };
 
   return <section className="page-section">
     <button className="back-button" onClick={onBack}>← Back to Orders</button>
@@ -121,7 +127,8 @@ function OrderDetail({ order, viewerId, onBack, onRelease, onRefund, onStart, on
           <span>↻ {order.packageRevisions ?? 0} revisions</span>
         </div>
 
-        {order.buyerRequirements && <div className="order-scope-card"><h3>Buyer requirements captured at checkout</h3><p>{order.buyerRequirements}</p></div>}
+        {order.buyerRequirements && <div className="order-scope-card"><h3>Seller requested before checkout</h3><p>{order.buyerRequirements}</p></div>}
+        {order.buyerBrief && <div className="order-scope-card"><h3>Buyer brief submitted at checkout</h3><p>{order.buyerBrief}</p></div>}
         {order.dealDescription && <div className="order-scope-card"><h3>Original deal scope</h3><p>{order.dealDescription}</p></div>}
 
         <div className="timeline">
@@ -148,7 +155,8 @@ function OrderDetail({ order, viewerId, onBack, onRelease, onRefund, onStart, on
           </>}
         </div>
 
-        {canStart && <><div className="order-action-note">Payment is secured. Start the order when you are ready to work on the buyer's captured requirements.</div><button className="primary full" disabled={busy} onClick={onStart}>{busy ? 'Updating…' : 'Start work →'}</button></>}
+        {counterpartyUsername && <button className="secondary full" type="button" onClick={messageCounterparty}>Message {counterpartyLabel.toLowerCase()}</button>}
+        {canStart && <><div className="order-action-note">Payment is secured. Review the buyer's captured brief, then start the order when you are ready.</div><button className="primary full" disabled={busy} onClick={onStart}>{busy ? 'Updating…' : 'Start work →'}</button></>}
         {canDeliver && <><div className="order-action-note">Send the finished files, links or session outcome through Messages, then mark the package delivered for buyer review.</div><button className="primary full" disabled={busy} onClick={onDeliver}>{busy ? 'Updating…' : 'Mark as delivered →'}</button></>}
         {isSeller && order.status === 'delivered' && <div className="order-action-note">Delivery is waiting for buyer approval. Escrow remains protected until they release it or open a dispute.</div>}
         {isSeller && order.status === 'completed' && <div className="order-action-note">Order completed. Your seller proceeds have been released to your FAV balance.</div>}
@@ -172,7 +180,7 @@ function OrderDetail({ order, viewerId, onBack, onRelease, onRefund, onStart, on
           </>}
         </div>}
 
-        <small className="escrow-note">◈ The package and deal scope were snapshotted at checkout, so later listing edits cannot change this order.</small>
+        <small className="escrow-note">◈ The package, deal scope and checkout brief are snapshotted on the order, so later listing edits cannot change the agreement.</small>
       </aside>
     </div>
   </section>;
@@ -330,11 +338,11 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     }
   };
 
-  const buy = async (packageTier = 'basic') => {
+  const buy = async (packageTier = 'basic', buyerBrief = '') => {
     if (!selectedDeal || busy) return;
     setBusy(true);
     try {
-      const order = await createOrderAndHoldFav(selectedDeal.id, packageTier);
+      const order = await createOrderAndHoldFav(selectedDeal.id, packageTier, buyerBrief);
       await refreshWallet();
       const freshOrders = await refreshOrders();
       const fresh = freshOrders.find(item => String(item.id) === String(order?.id));
