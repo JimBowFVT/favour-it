@@ -1,4 +1,4 @@
-import { calculateCryptoUnlockQuote, parseFavInput, shortAddress } from './crypto';
+import { calculateCryptoUnlockQuote, parseFavInput, resolveEip1193Provider, shortAddress } from './crypto';
 
 describe('FAV crypto helpers', () => {
   test('parses FAV input exactly to six-decimal micro-FAV units', () => {
@@ -26,5 +26,10 @@ describe('FAV crypto helpers', () => {
   test('shortens wallet addresses without changing short values', () => {
     expect(shortAddress('0x1234567890abcdef1234567890abcdef12345678')).toBe('0x1234…5678');
     expect(shortAddress('0x1234')).toBe('0x1234');
+  });
+
+  test('accepts an explicit EIP-1193 provider for future embedded wallets', () => {
+    const provider = { request: jest.fn() };
+    expect(resolveEip1193Provider(provider)).toBe(provider);
   });
 });
