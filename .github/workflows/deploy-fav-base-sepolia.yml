@@ -1,0 +1,99 @@
+name: Deploy FAV to Base Sepolia
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DEPLOY_FAV_BASE_SEPOLIA to confirm this testnet deployment
+        required: true
+        type: string
+      minter_address:
+        description: Optional dedicated minter; blank uses the disposable testnet deployer address
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Base Sepolia deployment
+    runs-on: ubuntu-latest
+    environment: fav-base-sepolia
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Confirm explicit testnet deployment
+        env:
+          DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$DEPLOY_CONFIRMATION" = "DEPLOY_FAV_BASE_SEPOLIA" || {
+            echo "Deployment confirmation did not match the required phrase." >&2
+            exit 1
+          }
+
+      - name: Load locked deployment policy
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(Path('contracts/deployments/base-sepolia-config.json').read_text())
+          expected = {
+              'chainId': 84532,
+              'decimals': 6,
+              'initialCapFav': 10_000_000,
+              'initialCapMicroFav': 10_000_000_000_000,
+              'initialSupplyFav': 0,
+              'adminAddress': '0xB15bd11EBF03feceE5F92F260def797542E0f570',
+              'unlockEnabledByDefault': False,
+              'mainnetDeploymentAllowed': False,
+          }
+          for key, value in expected.items():
+              if str(policy.get(key)).lower() != str(value).lower():
+                  raise SystemExit(f'locked FAV policy mismatch: {key}')
+          with open(Path(__import__('os').environ['GITHUB_ENV']), 'a') as env:
+              env.write(f"FAV_ADMIN_ADDRESS={policy['adminAddress']}\n")
+          PY
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install pinned OpenZeppelin contracts
+        run: |
+          mkdir -p contracts/lib/openzeppelin-contracts
+          git -C contracts/lib/openzeppelin-contracts init
+          git -C contracts/lib/openzeppelin-contracts remote add origin https://github.com/OpenZeppelin/openzeppelin-contracts.git
+          git -C contracts/lib/openzeppelin-contracts fetch --depth 1 origin cab19933c33c2ad1d4c7a84864a3601dddfd16f3
+          git -C contracts/lib/openzeppelin-contracts checkout --detach FETCH_HEAD
+
+      - name: Test contract before deployment
+        run: forge test --root contracts -vv
+
+      - name: Deploy 10,000,000-cap FAV
+        env:
+          FAV_MINTER_ADDRESS: ${{ inputs.minter_address }}
+          FAV_DEPLOYER_PRIVATE_KEY: ${{ secrets.FAV_TESTNET_DEPLOYER_PRIVATE_KEY }}
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+          DEPLOYMENT_OUTPUT: ${{ github.workspace }}/contracts/deployments/base-sepolia-latest.json
+        run: bash scripts/deploy-fav-base-sepolia.sh
+
+      - name: Verify deployed bytecode configuration
+        env:
+          BASE_SEPOLIA_RPC_URL: ${{ secrets.BASE_SEPOLIA_RPC_URL }}
+        run: |
+          export FAV_TOKEN_ADDRESS="$(jq -r '.tokenAddress' contracts/deployments/base-sepolia-latest.json)"
+          export FAV_MINTER_ADDRESS="$(jq -r '.minterAddress' contracts/deployments/base-sepolia-latest.json)"
+          bash scripts/verify-fav-base-sepolia.sh
+
+      - name: Upload verified deployment manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: fav-base-sepolia-deployment
+          path: contracts/deployments/base-sepolia-latest.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,17 @@
+{
+  "network": "Base Sepolia",
+  "chainId": 84532,
+  "token": "Favourit",
+  "symbol": "FAV",
+  "decimals": 6,
+  "initialCapFav": 10000000,
+  "initialCapMicroFav": 10000000000000,
+  "initialSupplyFav": 0,
+  "adminAddress": "0xB15bd11EBF03feceE5F92F260def797542E0f570",
+  "minterStrategy": "disposable-testnet-deployer-until-dedicated-relayer",
+  "unlockFeeBps": 250,
+  "buyerMarketplaceFeeBps": 300,
+  "sellerMarketplaceFeeBps": 300,
+  "unlockEnabledByDefault": false,
+  "mainnetDeploymentAllowed": false
+}

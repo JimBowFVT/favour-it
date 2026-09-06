@@ -1,4 +1,4 @@
-// FAV launch economy — value-based rewards.
+// FAV launch economy — value-based rewards and split marketplace fees.
 export const FAV_ECONOMY = {
   currency: 'FAV',
   unitsPerFAV: 1_000_000,
@@ -7,7 +7,11 @@ export const FAV_ECONOMY = {
   premiumDailyRewardUsd: 2,
   onboardingRewardDays: 3,
   onboardingDailyRewardUsd: 0,
-  transactionFeePercent: 5,
+  buyerMarketplaceFeePercent: 3,
+  sellerMarketplaceFeePercent: 3,
+  cryptoUnlockFeePercent: 2.5,
+  // Compatibility alias for older UI helpers. The legacy single fee now maps to the seller side.
+  transactionFeePercent: 3,
   minimumDealPriceUsdEquivalent: 1,
   escrowEnabled: true,
   fiatPurchaseEnabled: false,
@@ -37,6 +41,13 @@ export function unitsToFAV(units) {
   return Number(units) / FAV_ECONOMY.unitsPerFAV;
 }
 
+export function calculateBpsFeeUnits(amountUnits, bps) {
+  const amount = Number(amountUnits || 0);
+  const rate = Number(bps || 0);
+  if (!Number.isFinite(amount) || !Number.isFinite(rate) || amount <= 0 || rate <= 0) return 0;
+  return Math.ceil(amount * rate / 10_000);
+}
+
 export function getDailyReward(accountAgeDays, isPremium = false, referenceUsdPerFAV = FAV_ECONOMY.referenceUsdPerFAV) {
   if (Number(accountAgeDays) < FAV_ECONOMY.onboardingRewardDays) {
     return usdValueToFAV(FAV_ECONOMY.onboardingDailyRewardUsd, referenceUsdPerFAV);
@@ -45,11 +56,25 @@ export function getDailyReward(accountAgeDays, isPremium = false, referenceUsdPe
   return usdValueToFAV(usdReward, referenceUsdPerFAV);
 }
 
-export function calculateFee(amount) {
-  return Math.ceil(Number(amount) * (FAV_ECONOMY.transactionFeePercent / 100));
+export function calculateFee(amount, percent = FAV_ECONOMY.sellerMarketplaceFeePercent) {
+  const units = favToUnits(amount);
+  return unitsToFAV(calculateBpsFeeUnits(units, Math.round(Number(percent) * 100)));
 }
 
 export function calculateSellerPayout(amount) {
-  const value = Number(amount);
-  return Math.max(0, value - calculateFee(value));
+  const units = favToUnits(amount);
+  const feeUnits = calculateBpsFeeUnits(units, FAV_ECONOMY.sellerMarketplaceFeePercent * 100);
+  return unitsToFAV(Math.max(0, units - feeUnits));
+}
+
+export function calculateBuyerTotal(amount) {
+  const units = favToUnits(amount);
+  const feeUnits = calculateBpsFeeUnits(units, FAV_ECONOMY.buyerMarketplaceFeePercent * 100);
+  return unitsToFAV(units + feeUnits);
+}
+
+export function calculateCryptoUnlockNet(amount) {
+  const units = favToUnits(amount);
+  const feeUnits = calculateBpsFeeUnits(units, FAV_ECONOMY.cryptoUnlockFeePercent * 100);
+  return unitsToFAV(Math.max(0, units - feeUnits));
 }

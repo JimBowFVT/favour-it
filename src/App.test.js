@@ -1,4 +1,4 @@
-import { calculateFee, calculateSellerPayout, favToUnits, getDailyReward, unitsToFAV, usdValueToFAV } from './data/economy';
+import { calculateBpsFeeUnits, calculateBuyerTotal, calculateCryptoUnlockNet, calculateFee, calculateSellerPayout, favToUnits, getDailyReward, unitsToFAV, usdValueToFAV } from './data/economy';
 import { deals as exploreSeedDeals } from './data/deals';
 import { resolveServiceCategory, serviceCategories, serviceFamilies } from './data/serviceCategories';
 import { filterDeals, sortDeals } from './lib/marketplace';
@@ -23,9 +23,16 @@ describe('FAV economy', () => {
     expect(getDailyReward(2, true, 100)).toBe(0);
     expect(getDailyReward(3, true, 100)).toBeCloseTo(0.02);
   });
-  test('calculates platform fee and seller payout', () => {
-    expect(calculateFee(100)).toBe(5);
-    expect(calculateSellerPayout(100)).toBe(95);
+  test('splits marketplace fees 3% buyer and 3% seller at micro-FAV precision', () => {
+    expect(calculateBpsFeeUnits(100000000, 300)).toBe(3000000);
+    expect(calculateFee(100)).toBe(3);
+    expect(calculateSellerPayout(100)).toBe(97);
+    expect(calculateBuyerTotal(100)).toBe(103);
+    expect(calculateBpsFeeUnits(1, 300)).toBe(1);
+  });
+  test('applies the 2.5% crypto unlock fee only to the unlocked amount', () => {
+    expect(calculateCryptoUnlockNet(100)).toBe(97.5);
+    expect(calculateCryptoUnlockNet(1.234567)).toBeCloseTo(1.203702);
   });
 });
 

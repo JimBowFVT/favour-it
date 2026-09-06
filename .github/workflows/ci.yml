@@ -12,6 +12,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install pinned OpenZeppelin contracts
+        run: |
+          mkdir -p contracts/lib/openzeppelin-contracts
+          git -C contracts/lib/openzeppelin-contracts init
+          git -C contracts/lib/openzeppelin-contracts remote add origin https://github.com/OpenZeppelin/openzeppelin-contracts.git
+          git -C contracts/lib/openzeppelin-contracts fetch --depth 1 origin cab19933c33c2ad1d4c7a84864a3601dddfd16f3
+          git -C contracts/lib/openzeppelin-contracts checkout --detach FETCH_HEAD
+
+      - name: Test FAV smart contracts
+        run: forge test --root contracts -vv
+
+      - name: Validate FAV deployment tooling
+        run: |
+          bash -n scripts/deploy-fav-base-sepolia.sh
+          bash -n scripts/verify-fav-base-sepolia.sh
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy = json.loads(Path('contracts/deployments/base-sepolia-config.json').read_text())
+          assert policy['chainId'] == 84532
+          assert policy['decimals'] == 6
+          assert policy['initialCapFav'] == 10_000_000
+          assert policy['initialCapMicroFav'] == 10_000_000_000_000
+          assert policy['initialSupplyFav'] == 0
+          assert policy['adminAddress'].lower() == '0xb15bd11ebf03fecee5f92f260def797542e0f570'
+          assert policy['unlockFeeBps'] == 250
+          assert policy['buyerMarketplaceFeeBps'] == 300
+          assert policy['sellerMarketplaceFeeBps'] == 300
+          assert policy['unlockEnabledByDefault'] is False
+          assert policy['mainnetDeploymentAllowed'] is False
+          PY
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

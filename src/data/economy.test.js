@@ -6,6 +6,8 @@ import {
   getDailyReward,
   calculateFee,
   calculateSellerPayout,
+  calculateBuyerTotal,
+  calculateCryptoUnlockNet,
 } from './economy';
 
 describe('FAV economy', () => {
@@ -27,13 +29,18 @@ describe('FAV economy', () => {
     expect(getDailyReward(4, false, 1_000_000)).toBeCloseTo(0.000001);
   });
 
-  test('fee and seller payout follow configured fee rate', () => {
-    expect(calculateFee(100)).toBe(5);
-    expect(calculateSellerPayout(100)).toBe(95);
-    expect(calculateFee(1)).toBe(1);
+  test('marketplace uses 3% on each side with micro-FAV precision', () => {
+    expect(calculateFee(100)).toBe(3);
+    expect(calculateSellerPayout(100)).toBe(97);
+    expect(calculateBuyerTotal(100)).toBe(103);
+    expect(calculateFee(1)).toBeCloseTo(0.03);
   });
 
-  test('launch economy has closed-loop transfer settings', () => {
+  test('crypto unlock uses the configured 2.5% fee', () => {
+    expect(calculateCryptoUnlockNet(100)).toBe(97.5);
+  });
+
+  test('launch economy keeps marketplace transfers internal until crypto unlock is enabled', () => {
     expect(FAV_ECONOMY.fiatPurchaseEnabled).toBe(false);
     expect(FAV_ECONOMY.fiatRedemptionEnabled).toBe(false);
     expect(FAV_ECONOMY.userToUserTransfersEnabled).toBe(false);

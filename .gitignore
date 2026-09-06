@@ -11,6 +11,11 @@
 # production
 /build
 
+# smart contracts
+/contracts/cache
+/contracts/out
+/contracts/lib
+
 # misc
 .DS_Store
 .env.local
