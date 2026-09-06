@@ -1,8 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
-import { JsonRpcProvider } from "npm:ethers@6.17.0";
+import { Contract, JsonRpcProvider } from "npm:ethers@6.17.0";
 
 const CHAIN_ID = 84532;
+const tokenReadAbi = [
+  "function processedMintReferences(bytes32 mintRef) view returns (bool)",
+];
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -45,29 +48,79 @@ Deno.serve(async (req: Request) => {
     for (const unlock of requests || []) {
       const requestId = String(unlock.id);
       const txHash = String(unlock.tx_hash || "");
+      const tokenAddress = String(unlock.token_address || "");
+      const mintReference = String(unlock.mint_reference || "");
       const required = Math.max(1, Number(unlock.confirmations_required || 1));
 
       try {
+        if (Number(unlock.chain_id) !== CHAIN_ID) {
+          results.push({ requestId, txHash, state: "blocked", reason: "wrong-chain" });
+          continue;
+        }
+
+        const code = await provider.getCode(tokenAddress);
+        if (!code || code === "0x") {
+          results.push({ requestId, txHash, state: "blocked", reason: "token-code-missing" });
+          continue;
+        }
+
+        const token = new Contract(tokenAddress, tokenReadAbi, provider);
+        const mintReferenceProcessed = Boolean(await token.processedMintReferences(mintReference));
         const receipt = await provider.getTransactionReceipt(txHash);
+
         if (!receipt) {
-          results.push({ requestId, txHash, state: "pending" });
+          // Never refund while the on-chain reference says a mint happened. This can occur if a
+          // replacement transaction or a DB write failure made our stored tx hash stale.
+          results.push({
+            requestId,
+            txHash,
+            state: mintReferenceProcessed ? "manual-recovery-required" : "pending",
+            mintReferenceProcessed,
+          });
           continue;
         }
 
         if (Number(receipt.status) !== 1) {
+          // A reverted tracked transaction is only safe to refund if the unique mint reference is
+          // still unused on-chain. If another replacement already minted it, preserving the
+          // reservation avoids creating both internal and on-chain value.
+          if (mintReferenceProcessed) {
+            results.push({
+              requestId,
+              txHash,
+              state: "manual-recovery-required",
+              reason: "tracked-tx-reverted-but-reference-is-processed",
+              mintReferenceProcessed: true,
+            });
+            continue;
+          }
+
           const { error: failError } = await service.rpc("finalize_crypto_unlock_failure", {
             p_request_id: requestId,
-            p_reason: "On-chain FAV mint transaction reverted",
+            p_reason: "On-chain FAV mint transaction reverted and mint reference remains unused",
             p_tx_hash: txHash,
           });
           if (failError) throw failError;
-          results.push({ requestId, txHash, state: "failed" });
+          results.push({ requestId, txHash, state: "failed", mintReferenceProcessed: false });
+          continue;
+        }
+
+        if (!mintReferenceProcessed) {
+          // A successful receipt that did not consume the expected reference is an accounting
+          // anomaly. Do not confirm or refund automatically.
+          results.push({
+            requestId,
+            txHash,
+            state: "manual-recovery-required",
+            reason: "successful-tx-without-processed-mint-reference",
+            mintReferenceProcessed: false,
+          });
           continue;
         }
 
         const confirmations = latestBlock - Number(receipt.blockNumber) + 1;
         if (confirmations < required) {
-          results.push({ requestId, txHash, state: "confirming", confirmations, required });
+          results.push({ requestId, txHash, state: "confirming", confirmations, required, mintReferenceProcessed: true });
           continue;
         }
 
@@ -76,7 +129,7 @@ Deno.serve(async (req: Request) => {
           p_tx_hash: txHash,
         });
         if (successError) throw successError;
-        results.push({ requestId, txHash, state: "confirmed", confirmations });
+        results.push({ requestId, txHash, state: "confirmed", confirmations, mintReferenceProcessed: true });
       } catch (requestError) {
         console.error("crypto unlock reconciliation item failed", { requestId, txHash, requestError });
         results.push({

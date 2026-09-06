@@ -135,6 +135,14 @@ export async function connectAndVerifyCryptoWallet() {
   };
 }
 
+export async function disconnectCryptoWallet(chainId = BASE_SEPOLIA.chainId) {
+  const { data, error } = await supabase.rpc('disconnect_my_crypto_wallet', {
+    p_chain_id: chainId,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function requestCryptoUnlock(amountMicroFav, clientRequestId = null) {
   const amount = Number(amountMicroFav);
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Enter a valid FAV amount.');

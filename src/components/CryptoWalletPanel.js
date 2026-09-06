@@ -5,6 +5,7 @@ import {
   calculateCryptoUnlockQuote,
   cancelCryptoUnlock,
   connectAndVerifyCryptoWallet,
+  disconnectCryptoWallet,
   getCryptoChainStatus,
   getMyCryptoUnlocks,
   getMyCryptoWallet,
@@ -92,6 +93,20 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
     }
   };
 
+  const disconnect = async () => {
+    if (busy || !wallet) return;
+    setBusy(true);
+    setError('');
+    try {
+      await disconnectCryptoWallet();
+      await load();
+    } catch (disconnectError) {
+      setError(disconnectError.message || 'Could not disconnect this wallet.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const unlock = async () => {
     if (!canUnlock) return;
     setBusy(true);
@@ -146,7 +161,8 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
           {wallet ? <>
             <strong className="crypto-address">{shortAddress(wallet.wallet_address)}</strong>
             <small>{BASE_SEPOLIA.name} · verified {new Date(wallet.verified_at).toLocaleDateString()}</small>
-            <button className="secondary full" type="button" disabled={busy} onClick={connect}>Verify a different wallet</button>
+            <div className="crypto-wallet-actions"><button className="secondary" type="button" disabled={busy} onClick={connect}>Verify a different wallet</button><button className="text-button" type="button" disabled={busy || pending > 0} onClick={disconnect}>Disconnect</button></div>
+            {pending > 0 && <small>Finish or cancel pending unlocks before changing wallet state.</small>}
           </> : <>
             <p>Connect an EVM wallet and sign a one-time message. The signature proves ownership and does not send a blockchain transaction.</p>
             <button className="secondary full" type="button" disabled={busy} onClick={connect}>{busy ? 'Waiting for wallet…' : 'Connect & verify wallet'}</button>
