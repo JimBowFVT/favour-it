@@ -14,6 +14,11 @@ export async function getDealReviews(sellerId) {
 }
 
 export async function createReview({ orderId, rating, body = '' }) {
+  const numericRating = Number(rating);
+  const cleanBody = String(body || '').trim().slice(0, 1200);
+  if (!orderId) throw new Error('A valid completed order is required.');
+  if (!Number.isInteger(numericRating) || numericRating < 1 || numericRating > 5) throw new Error('Choose a rating from 1 to 5 stars.');
+
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
   if (!userData.user) throw new Error('You must be signed in.');
@@ -33,11 +38,14 @@ export async function createReview({ orderId, rating, body = '' }) {
       order_id: order.id,
       reviewer_id: userData.user.id,
       seller_id: order.seller_id,
-      rating: Number(rating),
-      body: String(body).trim(),
+      rating: numericRating,
+      body: cleanBody,
     })
     .select('id, order_id, reviewer_id, seller_id, rating, body, created_at')
     .single();
-  if (error) throw error;
+  if (error) {
+    if (String(error.message || '').toLowerCase().includes('duplicate')) throw new Error('You already reviewed this order.');
+    throw error;
+  }
   return data;
 }
