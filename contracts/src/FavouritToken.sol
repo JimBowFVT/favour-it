@@ -15,17 +15,17 @@ contract FavouritToken is ERC20Pausable, AccessControl {
     bytes32 public constant CAP_MANAGER_ROLE = keccak256("CAP_MANAGER_ROLE");
 
     uint256 public maxSupply;
-    mapping(bytes32 reference => bool processed) public processedMintReferences;
+    mapping(bytes32 mintRef => bool processed) public processedMintReferences;
 
     error ZeroAddress();
     error InvalidInitialCap();
     error InvalidMintReference();
-    error MintReferenceAlreadyProcessed(bytes32 reference);
+    error MintReferenceAlreadyProcessed(bytes32 mintRef);
     error CapNotIncreased(uint256 currentCap, uint256 requestedCap);
     error MaxSupplyExceeded(uint256 cap, uint256 requestedSupply);
 
     event MaxSupplyIncreased(uint256 indexed previousCap, uint256 indexed newCap);
-    event MintedWithReference(bytes32 indexed reference, address indexed recipient, uint256 amount);
+    event MintedWithReference(bytes32 indexed mintRef, address indexed recipient, uint256 amount);
 
     /// @param initialAdmin Address that manages roles, cap changes and emergency pause.
     /// @param initialMinter Address allowed to mint verified unlock requests.
@@ -48,19 +48,19 @@ contract FavouritToken is ERC20Pausable, AccessControl {
     }
 
     /// @notice Mint one previously-unprocessed off-chain unlock request.
-    /// @param reference Deterministic 32-byte identifier stored with the off-chain unlock request.
+    /// @param mintRef Deterministic 32-byte identifier stored with the off-chain unlock request.
     /// @param to Verified destination wallet.
     /// @param amount Net micro-FAV to mint after the configured unlock fee.
-    function mintWithReference(bytes32 reference, address to, uint256 amount) external onlyRole(MINTER_ROLE) {
-        if (reference == bytes32(0)) revert InvalidMintReference();
-        if (processedMintReferences[reference]) revert MintReferenceAlreadyProcessed(reference);
+    function mintWithReference(bytes32 mintRef, address to, uint256 amount) external onlyRole(MINTER_ROLE) {
+        if (mintRef == bytes32(0)) revert InvalidMintReference();
+        if (processedMintReferences[mintRef]) revert MintReferenceAlreadyProcessed(mintRef);
 
         uint256 supply = totalSupply();
         if (amount > maxSupply - supply) revert MaxSupplyExceeded(maxSupply, supply + amount);
 
-        processedMintReferences[reference] = true;
+        processedMintReferences[mintRef] = true;
         _mint(to, amount);
-        emit MintedWithReference(reference, to, amount);
+        emit MintedWithReference(mintRef, to, amount);
     }
 
     /// @notice Raise the token supply ceiling. The cap can never be silently reduced.

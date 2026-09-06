@@ -6,12 +6,12 @@ import {FavouritToken} from "../src/FavouritToken.sol";
 contract TokenActor {
     function tryMint(
         FavouritToken token,
-        bytes32 reference,
+        bytes32 mintRef,
         address to,
         uint256 amount
     ) external returns (bool) {
         (bool ok,) = address(token).call(
-            abi.encodeWithSignature("mintWithReference(bytes32,address,uint256)", reference, to, amount)
+            abi.encodeWithSignature("mintWithReference(bytes32,address,uint256)", mintRef, to, amount)
         );
         return ok;
     }
@@ -39,7 +39,7 @@ contract FavouritTokenTest {
         return new FavouritToken(address(this), address(this), cap);
     }
 
-    function ref(uint256 value) internal pure returns (bytes32) {
+    function makeRef(uint256 value) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked("favourit-test-reference", value));
     }
 
@@ -55,25 +55,25 @@ contract FavouritTokenTest {
     function testAuthorizedMinterCanMintExactMicroFavUnits() public {
         FavouritToken token = deploy(10 * UNIT);
         TokenActor recipient = new TokenActor();
-        bytes32 reference = ref(1);
+        bytes32 mintRef = makeRef(1);
 
-        token.mintWithReference(reference, address(recipient), 2_500_001);
+        token.mintWithReference(mintRef, address(recipient), 2_500_001);
 
         require(token.balanceOf(address(recipient)) == 2_500_001, "mint amount changed");
         require(token.totalSupply() == 2_500_001, "wrong total supply");
-        require(token.processedMintReferences(reference), "reference not recorded");
+        require(token.processedMintReferences(mintRef), "reference not recorded");
     }
 
     function testSameUnlockReferenceCannotMintTwice() public {
         FavouritToken token = deploy(10 * UNIT);
         TokenActor recipient = new TokenActor();
-        bytes32 reference = ref(2);
+        bytes32 mintRef = makeRef(2);
 
-        token.mintWithReference(reference, address(recipient), UNIT);
+        token.mintWithReference(mintRef, address(recipient), UNIT);
         (bool ok,) = address(token).call(
             abi.encodeWithSignature(
                 "mintWithReference(bytes32,address,uint256)",
-                reference,
+                mintRef,
                 address(recipient),
                 UNIT
             )
@@ -102,18 +102,18 @@ contract FavouritTokenTest {
         FavouritToken token = deploy(10 * UNIT);
         TokenActor attacker = new TokenActor();
 
-        require(!attacker.tryMint(token, ref(3), address(attacker), UNIT), "unauthorized mint succeeded");
+        require(!attacker.tryMint(token, makeRef(3), address(attacker), UNIT), "unauthorized mint succeeded");
         require(token.totalSupply() == 0, "unauthorized mint changed supply");
     }
 
     function testMintCannotCrossCap() public {
         FavouritToken token = deploy(2 * UNIT);
-        token.mintWithReference(ref(4), address(this), 2 * UNIT);
+        token.mintWithReference(makeRef(4), address(this), 2 * UNIT);
 
         (bool ok,) = address(token).call(
             abi.encodeWithSignature(
                 "mintWithReference(bytes32,address,uint256)",
-                ref(5),
+                makeRef(5),
                 address(this),
                 1
             )
@@ -141,7 +141,7 @@ contract FavouritTokenTest {
         TokenActor recipient = new TokenActor();
         TokenActor attacker = new TokenActor();
 
-        token.mintWithReference(ref(6), address(holder), 3 * UNIT);
+        token.mintWithReference(makeRef(6), address(holder), 3 * UNIT);
         require(!attacker.tryPause(token), "unauthorized pause succeeded");
 
         token.pause();
@@ -150,16 +150,16 @@ contract FavouritTokenTest {
         (bool mintWhilePaused,) = address(token).call(
             abi.encodeWithSignature(
                 "mintWithReference(bytes32,address,uint256)",
-                ref(7),
+                makeRef(7),
                 address(recipient),
                 UNIT
             )
         );
         require(!mintWhilePaused, "mint succeeded while paused");
-        require(!token.processedMintReferences(ref(7)), "failed paused mint consumed reference");
+        require(!token.processedMintReferences(makeRef(7)), "failed paused mint consumed reference");
 
         token.unpause();
-        token.mintWithReference(ref(7), address(recipient), UNIT);
+        token.mintWithReference(makeRef(7), address(recipient), UNIT);
         require(holder.tryTransfer(token, address(recipient), UNIT), "transfer failed after unpause");
         require(token.balanceOf(address(recipient)) == 2 * UNIT, "recipient balance incorrect");
         require(token.balanceOf(address(holder)) == 2 * UNIT, "sender balance incorrect");
