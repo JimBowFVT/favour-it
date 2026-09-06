@@ -119,14 +119,16 @@ fi
 
 (
   cd "$ROOT_DIR"
+  # Keep constructor args last. Foundry's current CLI consumes every following token
+  # as a constructor value, so RPC/private-key flags after this option break deployment.
   forge create \
     --root contracts \
     src/FavouritToken.sol:FavouritToken \
-    --constructor-args "$ADMIN_ADDRESS" "$MINTER_ADDRESS" "$INITIAL_CAP_UNITS" \
     --rpc-url "$RPC_URL" \
     --private-key "$DEPLOYER_PRIVATE_KEY" \
     --broadcast \
-    --json
+    --json \
+    --constructor-args "$ADMIN_ADDRESS" "$MINTER_ADDRESS" "$INITIAL_CAP_UNITS"
 ) | tee "$TMP_OUTPUT"
 
 python3 - "$TMP_OUTPUT" "$OUTPUT_PATH" "$CHAIN_ID" "$ADMIN_ADDRESS" "$MINTER_ADDRESS" "$DEPLOYER_ADDRESS" "$INITIAL_CAP_UNITS" "$INITIAL_CAP_FAV" <<'PY'
