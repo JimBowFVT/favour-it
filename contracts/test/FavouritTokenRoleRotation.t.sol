@@ -6,14 +6,14 @@ import {FavouritToken} from "../src/FavouritToken.sol";
 contract MinterActor {
     function mint(
         FavouritToken token,
-        bytes32 reference,
+        bytes32 mintRef,
         address to,
         uint256 amount
     ) external returns (bool) {
         (bool ok,) = address(token).call(
             abi.encodeWithSignature(
                 "mintWithReference(bytes32,address,uint256)",
-                reference,
+                mintRef,
                 to,
                 amount
             )
