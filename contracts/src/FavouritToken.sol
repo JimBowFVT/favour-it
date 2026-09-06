@@ -7,24 +7,28 @@ import {ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 
 /// @title Favourit (FAV)
 /// @notice ERC-20 representation of eligible Favourit earnings that have been unlocked on-chain.
-/// @dev Marketplace balances and reward provenance remain off-chain. This contract intentionally
-///      has no transfer tax, blacklist, redemption promise, or automatic marketplace logic.
+/// @dev Marketplace balances and reward provenance remain off-chain. Every bridge mint requires an
+///      immutable reference so retries cannot mint the same unlock twice.
 contract FavouritToken is ERC20Pausable, AccessControl {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant CAP_MANAGER_ROLE = keccak256("CAP_MANAGER_ROLE");
 
     uint256 public maxSupply;
+    mapping(bytes32 reference => bool processed) public processedMintReferences;
 
     error ZeroAddress();
     error InvalidInitialCap();
+    error InvalidMintReference();
+    error MintReferenceAlreadyProcessed(bytes32 reference);
     error CapNotIncreased(uint256 currentCap, uint256 requestedCap);
     error MaxSupplyExceeded(uint256 cap, uint256 requestedSupply);
 
     event MaxSupplyIncreased(uint256 indexed previousCap, uint256 indexed newCap);
+    event MintedWithReference(bytes32 indexed reference, address indexed recipient, uint256 amount);
 
-    /// @param initialAdmin Address that manages roles and the emergency pause role.
-    /// @param initialMinter Address allowed to mint unlocked FAV, expected to become a protected bridge/treasury signer.
+    /// @param initialAdmin Address that manages roles, cap changes and emergency pause.
+    /// @param initialMinter Address allowed to mint verified unlock requests.
     /// @param initialCap Maximum token supply at deployment, expressed in 6-decimal base units.
     constructor(address initialAdmin, address initialMinter, uint256 initialCap) ERC20("Favourit", "FAV") {
         if (initialAdmin == address(0) || initialMinter == address(0)) revert ZeroAddress();
@@ -43,15 +47,24 @@ contract FavouritToken is ERC20Pausable, AccessControl {
         return 6;
     }
 
-    /// @notice Mint on-chain FAV after an eligible off-chain balance has been locked/burned by the bridge flow.
-    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) {
+    /// @notice Mint one previously-unprocessed off-chain unlock request.
+    /// @param reference Deterministic 32-byte identifier stored with the off-chain unlock request.
+    /// @param to Verified destination wallet.
+    /// @param amount Net micro-FAV to mint after the configured unlock fee.
+    function mintWithReference(bytes32 reference, address to, uint256 amount) external onlyRole(MINTER_ROLE) {
+        if (reference == bytes32(0)) revert InvalidMintReference();
+        if (processedMintReferences[reference]) revert MintReferenceAlreadyProcessed(reference);
+
         uint256 supply = totalSupply();
         if (amount > maxSupply - supply) revert MaxSupplyExceeded(maxSupply, supply + amount);
+
+        processedMintReferences[reference] = true;
         _mint(to, amount);
+        emit MintedWithReference(reference, to, amount);
     }
 
-    /// @notice Raise the token supply ceiling. The cap can never be silently reduced below a previously published ceiling.
-    /// @dev In production CAP_MANAGER_ROLE should be controlled by a multisig/timelock rather than a personal wallet.
+    /// @notice Raise the token supply ceiling. The cap can never be silently reduced.
+    /// @dev In production CAP_MANAGER_ROLE should migrate to multisig/timelock infrastructure.
     function increaseMaxSupply(uint256 newCap) external onlyRole(CAP_MANAGER_ROLE) {
         uint256 previousCap = maxSupply;
         if (newCap <= previousCap) revert CapNotIncreased(previousCap, newCap);
