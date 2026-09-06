@@ -15,9 +15,10 @@ The internal ledger remains the source of truth for marketplace activity. On-cha
 - Buyer marketplace fee: 3%.
 - Seller marketplace fee: 3%.
 - Crypto unlock fee: 2.5%.
+- Seller-earnings crypto maturity: **5 days (120 hours)** after completion.
 - Daily/promo/purchased/legacy FAV is not directly crypto-withdrawable.
 - Seller proceeds from completed marketplace services become `earned_fav` and are the only source that may mature into crypto-eligible FAV.
-- Crypto unlock is disabled by default until a real deployment is recorded, independently verified, and a seller-earnings maturity policy is configured.
+- Crypto unlock is disabled by default until a real deployment is recorded and independently verified.
 
 ## Locked Base Sepolia administration
 
@@ -45,7 +46,7 @@ The application never asks for a seed phrase or private key. The current browser
 
 Every completed seller payout creates a `fav_earned_lots` row. The lot records the original amount, remaining amount, order origin, earning timestamp, and the timestamp at which that specific earning becomes crypto eligible.
 
-The maturity period is deliberately **not** hardcoded yet. `economy_config.crypto_unlock_maturity_hours` remains `NULL` until the business/risk policy is chosen, and crypto unlock cannot be enabled while it is unset.
+The locked testnet maturity period is **5 days (120 hours)**. A seller can use completed-service earnings inside Favourit immediately, but those earnings cannot be reserved for an on-chain crypto unlock until the lot's `crypto_eligible_at` timestamp is reached. The maturity duration is captured when each seller payout lot is created, so changing policy later does not retroactively shorten an existing lot.
 
 Exact lot accounting prevents two important bypasses:
 
@@ -128,7 +129,7 @@ The database intentionally keeps `unlock_enabled = false` until all of the follo
 - the locked admin address,
 - the deployed minter address,
 - a completed deployment verification timestamp,
-- an explicit seller-earnings maturity policy.
+- the configured 5-day seller-earnings maturity policy.
 
 `set_fav_crypto_unlock_enabled(true)` rejects activation until those checks are satisfied. This prevents a partially configured deployment from creating user withdrawal requests.
 
@@ -142,7 +143,7 @@ The live database also keeps a service-only `fav_crypto_config_audit_log` for ch
 4. Record the deployed admin/minter role addresses.
 5. Mark the deployment verified only after the read-only verifier passes.
 6. Confirm token name, symbol, decimals, max supply, zero initial supply and roles independently.
-7. Configure the testnet seller-earnings maturity period.
+7. Confirm the 5-day seller-earnings maturity policy is live.
 8. Run a wallet-link test.
 9. Seed a controlled test seller earning and corresponding maturity lot.
 10. Enable crypto unlock only for testnet.
