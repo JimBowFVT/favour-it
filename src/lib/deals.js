@@ -4,6 +4,7 @@ import { resolveServiceCategory, serviceCategoryLabels } from '../data/serviceCa
 const MICRO_FAV = 1000000;
 const PACKAGE_TIERS = ['basic', 'standard', 'premium'];
 const SERVICE_TYPES = ['deliverable', 'session', 'managed', 'audit'];
+const SELLER_STATUSES = ['published', 'paused', 'archived'];
 
 function normalizePackage(raw = {}) {
   const priceFav = Number(raw.price_fav ?? raw.priceFav ?? (Number(raw.price || 0) * MICRO_FAV) ?? 0);
@@ -111,6 +112,12 @@ export async function getPublishedDeals() {
   return rows.map(row => normalizeDeal(row, profileMap[row.seller_id], reviewStats[row.seller_id]));
 }
 
+export async function getMyDeals() {
+  const { data, error } = await supabase.rpc('get_my_deals');
+  if (error) throw error;
+  return (data || []).map(row => normalizeDeal(row));
+}
+
 export async function getDealById(dealId) {
   if (!dealId) return null;
   const { data, error } = await supabase.rpc('get_deal_marketplace_detail', { p_deal_id: dealId });
@@ -158,19 +165,16 @@ function cleanPackages(items) {
   }).filter(item => item.title).slice(0, 3);
 }
 
-export async function createDeal({ title, description, category, serviceType = 'deliverable', buyerRequirements = '', packages = [], faqs = [], portfolio = [] }) {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError) throw userError;
-  if (!userData.user) throw new Error('You must be signed in to publish a deal.');
-
+function buildDealPayload({ title, description, category, serviceType = 'deliverable', buyerRequirements = '', packages = [], faqs = [], portfolio = [] }) {
   const selectedCategory = resolveServiceCategory(category);
   if (!selectedCategory || !serviceCategoryLabels.includes(selectedCategory.label)) throw new Error('Choose an approved Favourit service category.');
   if (!SERVICE_TYPES.includes(serviceType)) throw new Error('Choose a supported service type.');
 
   const clean = cleanPackages(packages);
   if (!clean.length) throw new Error('Create at least one service package.');
+  if (!clean.some(item => item.tier === 'basic')) throw new Error('A Basic package is required.');
 
-  const { data, error } = await supabase.rpc('create_deal_v2', {
+  return {
     p_title: String(title || '').trim(),
     p_description: String(description || '').trim(),
     p_category: selectedCategory.label,
@@ -179,7 +183,15 @@ export async function createDeal({ title, description, category, serviceType = '
     p_packages: clean,
     p_faqs: cleanFaqs(faqs),
     p_portfolio: cleanPortfolio(portfolio),
-  });
+  };
+}
+
+export async function createDeal(form) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!userData.user) throw new Error('You must be signed in to publish a deal.');
+
+  const { data, error } = await supabase.rpc('create_deal_v2', buildDealPayload(form));
   if (error) throw error;
 
   const row = Array.isArray(data) ? data[0] : data;
@@ -189,6 +201,32 @@ export async function createDeal({ title, description, category, serviceType = '
     display_name: userData.user.user_metadata?.display_name,
     username: userData.user.user_metadata?.username,
   }, {});
+}
+
+export async function updateDeal(dealId, form) {
+  if (!dealId) throw new Error('Deal id is required.');
+  const { data, error } = await supabase.rpc('update_my_deal_v2', {
+    p_deal_id: dealId,
+    ...buildDealPayload(form),
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Deal was not updated.');
+  return normalizeDeal(row);
+}
+
+export async function setDealStatus(dealId, status) {
+  if (!dealId) throw new Error('Deal id is required.');
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (!SELLER_STATUSES.includes(normalizedStatus)) throw new Error('Unsupported deal status.');
+  const { data, error } = await supabase.rpc('set_my_deal_status', {
+    p_deal_id: dealId,
+    p_status: normalizedStatus,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('Deal status was not updated.');
+  return normalizeDeal(row);
 }
 
 export { normalizeDeal };
