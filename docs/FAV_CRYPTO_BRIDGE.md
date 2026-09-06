@@ -4,7 +4,7 @@
 
 Expose an optional on-chain FAV representation without moving Favourit's marketplace, rewards, orders, or escrow onto the blockchain.
 
-The internal ledger remains the source of truth for marketplace activity. On-chain FAV is created only when a verified user reserves eligible `earned_fav` for a crypto unlock.
+The internal ledger remains the source of truth for marketplace activity. On-chain FAV is created only when a verified user reserves eligible seller earnings for a crypto unlock.
 
 ## Fixed decisions for this phase
 
@@ -15,9 +15,9 @@ The internal ledger remains the source of truth for marketplace activity. On-cha
 - Buyer marketplace fee: 3%.
 - Seller marketplace fee: 3%.
 - Crypto unlock fee: 2.5%.
-- Daily/promo/legacy FAV is not directly crypto-withdrawable.
-- Seller proceeds from completed marketplace services become `earned_fav` and are unlock-eligible.
-- Crypto unlock is disabled by default until a real deployment is recorded and verified.
+- Daily/promo/purchased/legacy FAV is not directly crypto-withdrawable.
+- Seller proceeds from completed marketplace services become `earned_fav` and are the only source that may mature into crypto-eligible FAV.
+- Crypto unlock is disabled by default until a real deployment is recorded, independently verified, and a seller-earnings maturity policy is configured.
 
 ## Locked Base Sepolia administration
 
@@ -29,7 +29,7 @@ It receives `DEFAULT_ADMIN_ROLE`, `PAUSER_ROLE`, and `CAP_MANAGER_ROLE`. The pri
 
 For testnet automation, `MINTER_ROLE` defaults to the disposable Base Sepolia deployer address when no dedicated minter is supplied. This keeps the admin wallet separate from server-side minting. Before mainnet, the admin/cap/pause roles should move to a multisig/timelock and minting should use a separately protected relayer.
 
-The machine-readable policy is committed at `contracts/deployments/base-sepolia-config.json`.
+The machine-readable policy is committed at `contracts/deployments/base-sepolia-config.json`. The deploy script reads this policy directly and rejects a caller-supplied admin address that does not match it.
 
 ## Wallet verification
 
@@ -41,19 +41,34 @@ The machine-readable policy is committed at `contracts/deployments/base-sepolia-
 
 The application never asks for a seed phrase or private key. The current browser-wallet adapter is testnet plumbing; the same EIP-1193 verification path can be supplied by the future embedded-wallet provider.
 
+## Seller earnings maturity and provenance lots
+
+Every completed seller payout creates a `fav_earned_lots` row. The lot records the original amount, remaining amount, order origin, earning timestamp, and the timestamp at which that specific earning becomes crypto eligible.
+
+The maturity period is deliberately **not** hardcoded yet. `economy_config.crypto_unlock_maturity_hours` remains `NULL` until the business/risk policy is chosen, and crypto unlock cannot be enabled while it is unset.
+
+Exact lot accounting prevents two important bypasses:
+
+- spending matured earnings internally also consumes the corresponding mature lots, so a later sale cannot reuse stale maturity;
+- refunds restore the exact consumed lot provenance where possible instead of turning refunded value into immediately withdrawable crypto eligibility.
+
+Legacy pre-lot seller earnings are preserved as spendable internal FAV but remain non-matured until an explicit future policy handles them.
+
 ## Unlock reservation
 
 `create_crypto_unlock_request` is atomic and idempotent by `client_request_id`:
 
-1. Confirm crypto unlock is enabled and the token address is recorded.
-2. Confirm a verified Base Sepolia wallet exists.
-3. Calculate the configured unlock fee in integer micro-FAV.
-4. Debit the gross amount from `wallets.available_fav`.
-5. Debit the same gross amount from `fav_balance_sources.earned_fav` only.
-6. Store an immutable destination, token address, gross/fee/net amounts, and a deterministic 32-byte mint reference.
-7. Add an accounting ledger entry describing the reservation.
+1. Confirm crypto unlock is enabled and the token deployment is verified.
+2. Confirm the configured maturity policy exists.
+3. Confirm a verified Base Sepolia wallet exists.
+4. Confirm enough **matured seller-earning lots** exist.
+5. Calculate the configured unlock fee in integer micro-FAV.
+6. Debit the gross amount from `wallets.available_fav` and `fav_balance_sources.earned_fav`.
+7. Reserve the exact matured lots FIFO in `crypto_unlock_earned_lots`.
+8. Store an immutable destination, token address, gross/fee/net amounts, and a deterministic 32-byte mint reference.
+9. Add an accounting ledger entry describing the reservation.
 
-The user can cancel only while the request is still `pending`; cancellation restores both wallet balance and `earned_fav` provenance.
+The user can cancel only while the request is still `pending`; cancellation restores wallet balance, `earned_fav`, and the exact reserved lots.
 
 ## On-chain idempotency
 
@@ -69,9 +84,9 @@ Each reference can be processed once. The contract rejects zero references and z
 
 Failure paths:
 
-- `pending → cancelled`: user cancels; gross FAV is restored.
+- `pending → cancelled`: user cancels; gross FAV and maturity lots are restored.
 - `processing → pending`: transient pre-broadcast error; FAV stays reserved.
-- `processing/broadcast → failed`: confirmed on-chain failure; gross FAV is restored.
+- `processing/broadcast → failed`: confirmed on-chain failure; gross FAV and maturity lots are restored.
 
 A successful confirmation credits the 2.5% fee to the internal platform account. The net amount is the amount minted on-chain.
 
@@ -89,9 +104,9 @@ Do not use the long-term admin wallet private key as an application secret.
 
 ## Deployment
 
-`scripts/deploy-fav-base-sepolia.sh` hard-stops unless the RPC reports chain id `84532` and always uses the confirmed `10,000,000 FAV` initial cap. If no minter is explicitly supplied, the disposable deployer becomes the testnet minter; the configured admin remains separate.
+`scripts/deploy-fav-base-sepolia.sh` hard-stops unless the RPC reports chain id `84532`. The 10,000,000 FAV cap and confirmed admin address are read from the committed deployment policy, not free-form command-line values. If no minter is explicitly supplied, the disposable deployer becomes the testnet minter.
 
-The GitHub workflow `.github/workflows/deploy-fav-base-sepolia.yml` is manual and uses a protected environment. Its default admin input is the confirmed public admin address. Its deployer key should be disposable/testnet-only and funded only with Base Sepolia ETH.
+The GitHub workflow `.github/workflows/deploy-fav-base-sepolia.yml` is manual and uses a protected environment. It requires the explicit phrase `DEPLOY_FAV_BASE_SEPOLIA`; there is no editable admin-address input. Its deployer key should be disposable/testnet-only and funded only with Base Sepolia ETH.
 
 After deployment the workflow runs `scripts/verify-fav-base-sepolia.sh`, which checks:
 
@@ -112,9 +127,12 @@ The database intentionally keeps `unlock_enabled = false` until all of the follo
 - recorded token address and deployment transaction,
 - the locked admin address,
 - the deployed minter address,
-- a completed deployment verification timestamp.
+- a completed deployment verification timestamp,
+- an explicit seller-earnings maturity policy.
 
 `set_fav_crypto_unlock_enabled(true)` rejects activation until those checks are satisfied. This prevents a partially configured deployment from creating user withdrawal requests.
+
+The live database also keeps a service-only `fav_crypto_config_audit_log` for chain configuration changes and for changes to marketplace fees, unlock fee, or maturity policy. This gives the financial configuration an operational audit trail without exposing it to normal clients.
 
 ## End-to-end test sequence
 
@@ -124,12 +142,13 @@ The database intentionally keeps `unlock_enabled = false` until all of the follo
 4. Record the deployed admin/minter role addresses.
 5. Mark the deployment verified only after the read-only verifier passes.
 6. Confirm token name, symbol, decimals, max supply, zero initial supply and roles independently.
-7. Run a wallet-link test.
-8. Seed a controlled test seller earning.
-9. Enable crypto unlock only for testnet.
-10. Run one small unlock end-to-end.
-11. Wait for the configured confirmation count.
-12. Verify internal provenance + platform fee + on-chain supply reconcile exactly.
+7. Configure the testnet seller-earnings maturity period.
+8. Run a wallet-link test.
+9. Seed a controlled test seller earning and corresponding maturity lot.
+10. Enable crypto unlock only for testnet.
+11. Run one small unlock end-to-end.
+12. Wait for the configured confirmation count.
+13. Verify internal provenance + platform fee + on-chain supply reconcile exactly.
 
 ## Not in this phase
 
