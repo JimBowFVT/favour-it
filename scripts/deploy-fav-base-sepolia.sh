@@ -9,14 +9,14 @@ set -euo pipefail
 #   FAV_DEPLOYER_PRIVATE_KEY=0x...     # disposable/funded Base Sepolia deployer key
 #
 # Optional:
-#   FAV_MINTER_ADDRESS=0x...           # defaults to FAV_ADMIN_ADDRESS for the first testnet phase
+#   FAV_MINTER_ADDRESS=0x...           # defaults to the disposable deployer address for testnet
 #   BASE_SEPOLIA_RPC_URL=https://...   # defaults to Base public Sepolia RPC
 #   DEPLOYMENT_OUTPUT=/path/file.json  # defaults to contracts/deployments/base-sepolia-latest.json
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RPC_URL="${BASE_SEPOLIA_RPC_URL:-https://sepolia.base.org}"
 ADMIN_ADDRESS="${FAV_ADMIN_ADDRESS:-}"
-MINTER_ADDRESS="${FAV_MINTER_ADDRESS:-${FAV_ADMIN_ADDRESS:-}}"
+MINTER_ADDRESS_INPUT="${FAV_MINTER_ADDRESS:-}"
 DEPLOYER_PRIVATE_KEY="${FAV_DEPLOYER_PRIVATE_KEY:-}"
 OUTPUT_PATH="${DEPLOYMENT_OUTPUT:-${ROOT_DIR}/contracts/deployments/base-sepolia-latest.json}"
 EXPECTED_CHAIN_ID="84532"
@@ -33,19 +33,19 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required to write the dep
 [[ -d "$ROOT_DIR/contracts/lib/openzeppelin-contracts/contracts" ]] || fail "Pinned OpenZeppelin contracts are not installed under contracts/lib/openzeppelin-contracts"
 
 [[ -n "$ADMIN_ADDRESS" ]] || fail "FAV_ADMIN_ADDRESS is required"
-[[ -n "$MINTER_ADDRESS" ]] || fail "FAV_MINTER_ADDRESS could not be resolved"
 [[ -n "$DEPLOYER_PRIVATE_KEY" ]] || fail "FAV_DEPLOYER_PRIVATE_KEY is required"
 
 [[ "$ADMIN_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_ADMIN_ADDRESS is not a valid EVM address"
-[[ "$MINTER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_MINTER_ADDRESS is not a valid EVM address"
 [[ "$DEPLOYER_PRIVATE_KEY" =~ ^0x[0-9a-fA-F]{64}$ ]] || fail "FAV_DEPLOYER_PRIVATE_KEY is not a 32-byte hex key"
 
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL")"
 [[ "$CHAIN_ID" == "$EXPECTED_CHAIN_ID" ]] || fail "RPC chain id is ${CHAIN_ID}; expected Base Sepolia ${EXPECTED_CHAIN_ID}"
 
 ADMIN_ADDRESS="$(cast to-check-sum-address "$ADMIN_ADDRESS")"
-MINTER_ADDRESS="$(cast to-check-sum-address "$MINTER_ADDRESS")"
 DEPLOYER_ADDRESS="$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")"
+MINTER_ADDRESS="${MINTER_ADDRESS_INPUT:-$DEPLOYER_ADDRESS}"
+[[ "$MINTER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "FAV_MINTER_ADDRESS is not a valid EVM address"
+MINTER_ADDRESS="$(cast to-check-sum-address "$MINTER_ADDRESS")"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 TMP_OUTPUT="$(mktemp)"
@@ -57,6 +57,10 @@ printf '  deployer: %s\n' "$DEPLOYER_ADDRESS"
 printf '  admin:    %s\n' "$ADMIN_ADDRESS"
 printf '  minter:   %s\n' "$MINTER_ADDRESS"
 printf '  cap:      10,000,000 FAV\n'
+
+if [[ "$MINTER_ADDRESS" == "$ADMIN_ADDRESS" ]]; then
+  printf 'WARNING: minter and admin are the same address. This is acceptable only for temporary testnet use.\n' >&2
+fi
 
 (
   cd "$ROOT_DIR"
@@ -96,6 +100,7 @@ manifest = {
     "decimals": 6,
     "initialCapMicroFav": int(cap),
     "initialCapFav": 10_000_000,
+    "initialSupplyFav": 0,
     "tokenAddress": address.lower(),
     "deploymentTxHash": tx_hash.lower() if isinstance(tx_hash, str) else None,
     "adminAddress": admin,
@@ -110,4 +115,4 @@ print(f"Deployment manifest written to {path}")
 print(f"FAV token address: {manifest['tokenAddress']}")
 PY
 
-printf '\nDeployment complete. Crypto unlock remains disabled until the deployment is recorded in Supabase and explicitly enabled.\n'
+printf '\nDeployment complete. Crypto unlock remains disabled until the deployment is verified, recorded in Supabase, and explicitly enabled.\n'
