@@ -6,9 +6,10 @@ on:
       admin_address:
         description: Public wallet that receives FAV admin/cap/pause roles
         required: true
+        default: '0xB15bd11EBF03feceE5F92F260def797542E0f570'
         type: string
       minter_address:
-        description: Optional minter wallet; leave blank to use the admin wallet for testnet
+        description: Optional dedicated minter; blank uses the disposable testnet deployer address
         required: false
         default: ''
         type: string
