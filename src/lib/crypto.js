@@ -1,3 +1,4 @@
+/* global globalThis */
 import { supabase } from './supabase';
 
 export const BASE_SEPOLIA = {
