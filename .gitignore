@@ -26,3 +26,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Private operating data and generated preview artifacts
+/marketing/private/
+/marketing/exports/
+/outputs/
+/.site-package/
+/supabase/.temp/

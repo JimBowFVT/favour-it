@@ -64,9 +64,11 @@ jobs:
           node-version: 20
           cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Test
         run: npm test -- --watchAll=false --runInBand
+      - name: Test marketing measurement
+        run: npm run test:marketing
       - name: Build
         id: build
         continue-on-error: true

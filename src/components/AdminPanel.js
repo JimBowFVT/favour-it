@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { assignCommunityGroupModerator, removeCommunityGroupModerator, listCommunityGroups, getCommunityGroupMembers } from '../lib/social';
 import './AdminPanel.css';
 import './AdminCommunityReports.css';
+import AdminFoundingCreators from '../marketing/AdminFoundingCreators';
 
 const ADMIN_EMAIL = 'adamzoharlevi@gmail.com';
 
@@ -24,6 +25,7 @@ export default function AdminPanel() {
   if (!allowed) return <div className="admin-shell"><div className="admin-denied"><span>403</span><h1>Admin access only</h1><p>This area is restricted to the Favourit administrator.</p><a href="/">Return to Favourit</a></div></div>;
 
   return <main className="admin-shell">
+    <AdminFoundingCreators />
     <header className="admin-header"><div><div className="eyebrow">FAVOURIT CONTROL CENTER</div><h1>Admin <span>Panel</span></h1><p>Manage trusted roles and keep the marketplace under control.</p></div><div className="admin-identity"><small>ADMIN</small><strong>{ADMIN_EMAIL}</strong></div></header>
 
     <section className="admin-card admin-users-card"><div className="admin-card-heading"><div><h2>User management</h2><p>Search a user and give or remove Middleman access.</p></div><div className="admin-role-pill">● Middleman</div></div><form className="admin-search" onSubmit={e => { e.preventDefault(); loadUsers(); }}><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search email, username or name…"/><button className="primary" type="submit">Search</button></form>{notice && <div className="admin-notice">✓ {notice}</div>}{error && <div className="admin-error">{error}</div>}<div className="admin-table"><div className="admin-row admin-row-head"><span>User</span><span>Role</span><span>Joined</span><span>Action</span></div>{users.map(user => <div className="admin-row" key={user.user_id}><div className="admin-user"><div className="admin-avatar">{(user.display_name || user.username || user.email || 'U').slice(0,1).toUpperCase()}</div><div><strong>{user.display_name || user.username || 'Unnamed user'}</strong><small>{user.email || 'No email'}</small></div></div><span className={`admin-role ${user.role}`}>{user.role}</span><span className="admin-date">{user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</span><div>{user.role === 'middleman' ? <button className="danger-button" disabled={workingId === user.user_id} onClick={() => setMiddleman(user, false)}>{workingId === user.user_id ? 'Saving…' : 'Remove'}</button> : user.role === 'admin' ? <span className="protected-role">Protected</span> : <button className="secondary" disabled={workingId === user.user_id} onClick={() => setMiddleman(user, true)}>{workingId === user.user_id ? 'Saving…' : 'Make Middleman'}</button>}</div></div>)}{!users.length && <div className="admin-empty">No users found.</div>}</div></section>

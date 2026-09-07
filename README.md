@@ -1,4 +1,8 @@
-# Getting Started with Create React App
+# Favourit
+
+The [founding-creators marketing launch kit](marketing/START-HERE.md) includes the landing page, private intake, research scripts, content drafts and release instructions. See [release and measurement](marketing/RELEASE.md) for the marketing route, environment flags and rollout gates.
+
+## Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
