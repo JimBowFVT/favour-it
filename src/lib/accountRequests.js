@@ -45,3 +45,21 @@ export function createAccountRequests(client, expectedUserId, timeoutMs = 15000)
   };
   return { assertOwner, run, cancel: () => pending.forEach(controller => controller.abort()) };
 }
+
+export async function currentAccountId(client, expectedUserId) {
+  if (expectedUserId) return expectedUserId;
+  if (!client) throw new Error('Sign in to open your wallet.');
+  let timer;
+  try {
+    const response = await Promise.race([
+      client.auth.getSession(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Session check timed out. Sign in and retry.')), 15000);
+      }),
+    ]);
+    if (response.error) throw response.error;
+    const id = response.data?.session?.user?.id;
+    if (!id) throw new Error('Sign in to open your wallet.');
+    return id;
+  } finally { clearTimeout(timer); }
+}

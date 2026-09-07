@@ -4,6 +4,8 @@ import { languages, normalizeLanguageCode } from '../data/languages';
 import FavouritLoader from './FavouritLoader';
 
 const AUTH_TIMEOUT_MS = 15000;
+const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
+const USERNAME_GATE_KEY = 'favourit_username_onboarding_gate_pending';
 function Logo() { return <div className="logo"><span>Favour</span><i>it</i></div>; }
 function withTimeout(promise, ms, message) { let timer; const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => reject(new Error(message)), ms); }); return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer)); }
 function initialLanguage() { try { return normalizeLanguageCode(navigator.language || 'en'); } catch (_) { return 'en'; } }
@@ -13,7 +15,6 @@ export default function AuthGate() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [birthDate, setBirthDate] = useState('');
   const [language, setLanguage] = useState(initialLanguage);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -32,13 +33,14 @@ export default function AuthGate() {
       const selectedLanguage = normalizeLanguageCode(language);
       const result = mode === 'login'
         ? await withTimeout(signIn(cleanEmail, password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.')
-        : await withTimeout(signUp(cleanEmail, password, displayName.trim(), selectedLanguage, birthDate), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
+        : await withTimeout(signUp(cleanEmail, password, displayName.trim(), selectedLanguage), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
       if (result.error) throw result.error;
       if (mode === 'signup') {
-        try {
-          window.localStorage.setItem('favourit_language', selectedLanguage);
-          window.localStorage.setItem('favourit:language', selectedLanguage);
-        } catch (_) { /* Preferences are optional; account setup is persisted by the server. */ }
+        window.localStorage.setItem('favourit_language', selectedLanguage);
+        window.localStorage.setItem('favourit:language', selectedLanguage);
+        const onboarding = JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() });
+        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, onboarding);
+        window.localStorage.setItem(USERNAME_GATE_KEY, onboarding);
         if (!result.data?.session) {
           setMessage('Account created. Check your email to confirm your account, then sign in.');
           setMode('login');
@@ -61,14 +63,12 @@ export default function AuthGate() {
     <p>{mode === 'login' ? 'Sign in to your marketplace account.' : 'Create an account and turn your skills into purchasing power.'}</p>
     {mode === 'signup' && <>
       <input className="auth-input" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Display name" autoComplete="name" />
-      <label htmlFor="signup-birth-date">Date of birth</label><input id="signup-birth-date" className="auth-input" type="date" min="1900-01-01" autoComplete="bday" required value={birthDate} onChange={e => setBirthDate(e.target.value)} />
-      <small>Accounts must be 13+. Crypto requires separate verified age 18+ and identity checks.</small>
       <select className="auth-input" value={language} onChange={e => setLanguage(e.target.value)} aria-label="Your language">{languages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}</select>
       <small style={{display:'block',color:'#7f899c',margin:'-6px 0 10px',fontSize:11}}>Messages you translate will use this language. You can change it anytime in Settings.</small>
     </>}
     <input className="auth-input" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email address" autoComplete="email" />
     <input className="auth-input" value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-    {error && <div className="auth-error" role="alert">{error}</div>}
+    {error && <div className="auth-error">{error}</div>}
     {message && <div className="auth-message">{message}</div>}
     <button className="primary full" disabled={busy} type="submit">{mode === 'login' ? 'Sign in →' : 'Create account →'}</button>
     <div className="auth-switch">{mode === 'login' ? 'New to Favourit?' : 'Already have an account?'}{' '}<button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setMessage(''); }}>{mode === 'login' ? 'Create one' : 'Sign in'}</button></div>

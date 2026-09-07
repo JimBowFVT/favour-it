@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
 import './Prototype.css';
 import './components/OrdersMvp.css';
@@ -20,10 +20,8 @@ import ExploreDealsPage from './components/ExploreDealsPage';
 import DealDetailPage from './components/DealDetailPage';
 import CreateDealPage from './components/CreateDealPage';
 import ManageDealsPage from './components/ManageDealsPage';
-import WalletPage from './components/WalletPage';
-import AppSidebar from './components/AppSidebar';
 
-
+const navItems = ['Home', 'Explore', 'Orders', 'My Deals', 'Community', 'Upgrade'];
 const DEFAULT_ECONOMY = { buyer_marketplace_fee_bps: 300, seller_marketplace_fee_bps: 300, crypto_unlock_fee_bps: 250 };
 const ACTIVE_ORDER_STATUSES = new Set(['funded', 'in_progress', 'delivered', 'disputed']);
 
@@ -218,7 +216,7 @@ function Profile({ fav, myDeals, orders, onCreate, onOrders, onManageDeals, sess
 
   return <section className="page-section">
     <div className="profile-hero">
-      <div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>{session?.user?.email_confirmed_at ? '✓ Email verified' : 'Email not verified'}</span><span>◈ Favourit member</span></div></div></div>
+      <div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>✓ Account verified</span><span>◈ Favourit member</span></div></div></div>
       <button className="secondary" onClick={onSignOut}>Sign out</button>
     </div>
     <div className="profile-stats">
@@ -236,18 +234,9 @@ function Profile({ fav, myDeals, orders, onCreate, onOrders, onManageDeals, sess
 }
 
 function App({ initialWallet, session, rewardMessage, usernameStatus }) {
-  const [active, setActive] = useState(() => window.location.hash === '#wallet' ? 'Wallet' : 'Home');
+  const [active, setActive] = useState('Home');
   const [query, setQuery] = useState('');
-  const [fav, setFav] = useState(initialWallet?.available_fav ?? null);
-  const [sidebarOpen, setSidebarOpen] = useState(() => Boolean(window.matchMedia?.('(min-width: 1000px)').matches));
-  const updateBalance = useCallback(amount => setFav(amount), []);
-  useEffect(() => {
-    const media = window.matchMedia?.('(min-width: 1000px)');
-    const update = event => setSidebarOpen(event.matches);
-    media?.addEventListener?.('change', update);
-    return () => media?.removeEventListener?.('change', update);
-  }, []);
-  useEffect(() => { if (initialWallet) setFav(initialWallet.available_fav); }, [initialWallet]);
+  const [fav, setFav] = useState(Number(initialWallet?.available_fav || 0));
   const [economy, setEconomy] = useState(DEFAULT_ECONOMY);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -271,13 +260,12 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     setSelectedOrder(null);
     setEditingDeal(null);
     setActive(item);
-    window.history.replaceState(null, '', item === 'Wallet' ? '#wallet' : window.location.pathname + window.location.search);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const refreshWallet = async () => {
     const wallet = await getMyWallet();
-    if (wallet) setFav(wallet.available_fav);
+    if (wallet) setFav(Number(wallet.available_fav || 0));
     return wallet;
   };
 
@@ -302,7 +290,7 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
         if (remoteDeals.length) setDeals(remoteDeals);
         setMyDeals(sellerDeals);
         setOrders(remoteOrders);
-        setFav(wallet?.available_fav ?? null);
+        setFav(Number(wallet?.available_fav || 0));
         setFavorites(new Set([...favoriteIds].map(String)));
         if (economyConfig) setEconomy({ ...DEFAULT_ECONOMY, ...economyConfig });
       } catch (error) {
@@ -506,10 +494,6 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   else if (active === 'Explore') content = <ExploreDealsPage query={query} setQuery={setQuery} onOpen={setSelectedDeal} onCreate={() => go('Create Deal')} deals={deals} favorites={favorites} onFavorite={toggleFavorite} />;
   else if (active === 'Orders') content = <Orders orders={orders} onOpen={setSelectedOrder} fav={fav} viewerId={session?.user?.id} />;
   else if (active === 'My Deals') content = <ManageDealsPage deals={myDeals} onCreate={() => go('Create Deal')} onEdit={openDealEditor} onStatus={changeDealStatus} busy={busy} />;
-  else if (active === 'Wallet') content = <WalletPage key={session?.user?.id} userId={session?.user?.id} onBalance={updateBalance} onExplore={() => go('Explore')} onOpenOrder={async id => {
-    try { await refreshOrders(id); setActive('Orders'); setSelectedDeal(null); setEditingDeal(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-    catch (error) { notify(error.message || 'Could not open this order.'); }
-  }} />;
   else if (active === 'Community') content = <Community />;
   else if (active === 'Upgrade') content = <PremiumPage fav={fav} />;
   else if (active === 'Profile') content = <Profile fav={fav} myDeals={myDeals} orders={orders} onCreate={() => go('Create Deal')} onOrders={() => go('Orders')} onManageDeals={() => go('My Deals')} session={session} onSignOut={logout} usernameStatus={usernameStatus} />;
@@ -517,13 +501,13 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
   else if (active === 'Edit Deal' && editingDeal) content = <CreateDealPage key={editingDeal.id} initialDeal={editingDeal} onBack={() => go('My Deals')} onCreated={saveDeal} busy={busy} />;
   else content = <Home fav={fav} onExplore={() => go('Explore')} onCreate={() => go('Create Deal')} />;
 
-  return <div className={`app-shell ${sidebarOpen ? 'sidebar-expanded' : ''}`}>
+  return <div className="app-shell">
     <header className="topbar">
       <button className="brand-button" onClick={() => go('Home')}><Logo /></button>
-      <AppSidebar active={active} open={sidebarOpen} onToggle={setSidebarOpen} onNavigate={go} fav={fav} />
-      <div className="top-actions"><button type="button" className="balance" aria-label="Open FAV wallet" onClick={() => go('Wallet')}><small>FAV</small><strong>{formatFav(fav)}</strong></button><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div>
+      <nav>{navItems.map(item => <button key={item} className={active === item || (item === 'My Deals' && ['Create Deal', 'Edit Deal'].includes(active)) ? 'active' : ''} onClick={() => go(item)}>{item}</button>)}</nav>
+      <div className="top-actions"><div className="balance"><small>FAV</small><strong>{formatFav(fav)}</strong></div><button className="profile-button" onClick={() => go('Profile')}>{initialsFor(session?.user?.user_metadata?.display_name || session?.user?.email)} <span>⌄</span></button></div>
     </header>
-    <main>{loading && active !== 'Wallet' ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>
+    <main>{loading ? <FavouritLoader title="Loading your Favourit" subtitle="Preparing your marketplace…" /> : content}</main>
     {toast && <div className="toast" role="status">{toast}</div>}
   </div>;
 }

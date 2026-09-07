@@ -54,12 +54,13 @@ test('a rejected username claim stays in setup; successful server confirmation p
   fireEvent.click(screen.getByRole('button',{name:'Claim my @ →'}));
   expect(await screen.findByText('Authenticated workspace')).toBeInTheDocument();
 });
-test('an unavailable setup status fails closed with a working retry', async () => {
+test('an unavailable setup status uses the original username form for a safe retry', async () => {
   getMyUsernameStatus.mockRejectedValueOnce(new Error('Setup connection failed'));
   render(<AppShell />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Setup connection failed');
   expect(screen.queryByText('Authenticated workspace')).not.toBeInTheDocument();
   getMyUsernameStatus.mockResolvedValue({username:'chosen',username_chosen:true});
-  fireEvent.click(screen.getByRole('button',{name:'Retry account setup'}));
+  fireEvent.change(screen.getByLabelText('Choose your username'),{target:{value:'chosen'}});
+  fireEvent.click(screen.getByRole('button',{name:'Claim my @ →'}));
   expect(await screen.findByText('Authenticated workspace')).toBeInTheDocument();
 });

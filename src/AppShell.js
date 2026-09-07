@@ -54,7 +54,6 @@ export default function AppShell() {
   const [profile, setProfile] = useState(null);
   const [usernameStatus, setUsernameStatus] = useState(null);
   const [usernameError, setUsernameError] = useState('');
-  const [setupRetry, setSetupRetry] = useState(0);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [uiReady, setUiReady] = useState(false);
   const [rewardMessage, setRewardMessage] = useState('');
@@ -77,6 +76,7 @@ export default function AppShell() {
       setWallet(null);
       setProfile(null);
       setUsernameStatus(null);
+      setUsernameError('');
       setRewardMessage('');
       setUiReady(true);
       setLoading(false);
@@ -91,7 +91,7 @@ export default function AppShell() {
       const version = ++loadVersion;
       const userId = nextSession.user.id;
       if (sessionUserRef.current !== userId) {
-        setWallet(null); setProfile(null); setUsernameStatus(null); setRewardMessage('');
+        setWallet(null); setProfile(null); setUsernameStatus(null); setUsernameError(''); setRewardMessage('');
       }
       sessionUserRef.current = userId;
 
@@ -132,7 +132,7 @@ export default function AppShell() {
         }
       }
 
-      // Daily rewards are claimed explicitly in Wallet using the current offer API.
+      // Reward service helpers are retained; the unapproved reward UI was withdrawn.
       // Never mutate the user's balance during authentication or token refresh.
 
     };
@@ -182,7 +182,7 @@ export default function AppShell() {
       loadVersion += 1;
       listener.subscription.unsubscribe();
     };
-  }, [staffPath, setupRetry]);
+  }, [staffPath]);
 
   useEffect(() => {
     if (!session?.user?.id || !supabase || staffPath) return undefined;
@@ -230,16 +230,15 @@ export default function AppShell() {
     return <><MiddlemanPanel /><PublicProfileHost session={session} /></>;
   }
 
-  if (!usernameStatus) {
-    return <section className="auth-page"><div className="auth-card"><h1>Checking your account setup</h1>
-      {usernameError ? <><p role="alert">{usernameError}</p><button className="primary" type="button" onClick={() => { setUsernameError(''); setSetupRetry(value => value + 1); }}>Retry account setup</button></> : <p role="status">Loading your saved username choice…</p>}
-    </div></section>;
+  if (!usernameStatus && !usernameError) {
+    return <FavouritLoader title="Connecting to Favourit" subtitle="Checking your secure account…" />;
   }
-  if (usernameStatus.username_chosen !== true) {
+  if (!usernameStatus || usernameStatus.username_chosen !== true) {
     return <UsernameGate key={session.user.id}
-      displayName={usernameStatus.display_name || session.user.user_metadata?.display_name || ''}
-      email={usernameStatus.email || session.user.email || ''}
-      onComplete={status => setUsernameStatus(status)}
+      displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''}
+      email={usernameStatus?.email || session.user.email || ''}
+      initialError={usernameError}
+      onComplete={status => { setUsernameError(''); setUsernameStatus(status); }}
     />;
   }
 

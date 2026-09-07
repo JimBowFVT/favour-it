@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { formatMicroFav, microFavInteger } from './favAmounts';
-import { createAccountRequests } from './accountRequests';
+import { createAccountRequests, currentAccountId } from './accountRequests';
 
 const MICRO_FAV = 1_000_000;
 
@@ -23,6 +23,7 @@ export async function getMyWallet() {
 }
 
 export async function getMyFavBalanceBreakdown(userId) {
+  userId = await currentAccountId(supabase, userId);
   const requests = createAccountRequests(supabase, userId);
   const data = await requests.run(() => supabase.rpc('get_my_fav_balance_breakdown'));
   const value = Array.isArray(data) ? data[0] : data;

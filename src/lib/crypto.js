@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { createAccountRequests } from './accountRequests';
+import { readUnlockAttempt, saveUnlockAttempt, clearUnlockAttempt, isDefiniteRpcRejection } from './cryptoRecovery';
+import { createAccountRequests, currentAccountId } from './accountRequests';
 export { parseFavInput, calculateCryptoUnlockQuote } from './favAmounts';
 
 export const BASE_SEPOLIA = {
@@ -24,8 +25,8 @@ export function resolveEip1193Provider(provider = null) {
   return null;
 }
 
-function accountRequests(userId) {
-  if (!userId) throw new Error('Sign in again before opening crypto.');
+async function accountRequests(userId) {
+  userId = await currentAccountId(supabase, userId);
   return createAccountRequests(supabase, userId);
 }
 async function accountRpc(name, args, userId) {
@@ -38,14 +39,14 @@ export const getCryptoChainStatus = userId => accountRpc('get_crypto_chain_statu
 
 export async function getMyCryptoWallet(chainId = BASE_SEPOLIA.chainId, userId) {
   const requests = await accountRequests(userId);
-  const owner = userId;
+  const owner = (await requests.assertOwner()).user.id;
   return requests.run(() => supabase.from('crypto_wallets')
     .select('id, chain_id, wallet_address, verified_at, last_used_at, is_active')
     .eq('user_id', owner).eq('chain_id', chainId).eq('is_active', true).maybeSingle());
 }
 export async function getMyCryptoUnlocks(limit = 10, userId) {
   const requests = await accountRequests(userId);
-  const owner = userId;
+  const owner = (await requests.assertOwner()).user.id;
   return (await requests.run(() => supabase.from('crypto_unlock_requests')
     .select('id, client_request_id, chain_id, token_address, destination_address, gross_fav, fee_fav, net_fav, status, tx_hash, created_at, confirmed_at, failed_at, cancelled_at, last_error')
     .eq('user_id', owner).order('created_at', { ascending: false })
@@ -83,6 +84,7 @@ export async function connectAndVerifyCryptoWallet(provider = null, expectedUser
   const requests = await accountRequests(expectedUserId);
   const originalSession = await requests.run(session => ({ data: session }));
   const userId = originalSession.user.id;
+  if (readUnlockAttempt(window.localStorage, userId)) throw new Error('Your earlier crypto request needs confirmation before changing wallets.');
   if ((await getMyCryptoEligibility(userId))?.crypto_eligible !== true) throw new Error('Complete server-verified crypto eligibility before linking a wallet.');
   const ethereum = resolveEip1193Provider(provider);
   if (!ethereum) throw new Error('No compatible wallet provider is available yet.');
@@ -133,14 +135,59 @@ export async function connectAndVerifyCryptoWallet(provider = null, expectedUser
   };
 }
 
-export function disconnectCryptoWallet(chainId = BASE_SEPOLIA.chainId, userId) {
+export async function disconnectCryptoWallet(chainId = BASE_SEPOLIA.chainId, userId) {
+  userId = await currentAccountId(supabase, userId);
+  if (readUnlockAttempt(window.localStorage, userId)) throw new Error('Your earlier crypto request needs confirmation before disconnecting.');
   return accountRpc('disconnect_my_crypto_wallet', { p_chain_id: chainId }, userId);
 }
-export function requestCryptoUnlock(amountMicroFav, clientRequestId, userId) {
+
+// Compatibility with the ORIGINAL settings panel, without adding recovery widgets.
+// Ambiguous retries use the durable account-scoped ID, including after a reload.
+export async function requestCryptoUnlock(amountMicroFav, clientRequestId = null, userId) {
   const amount = Number(amountMicroFav);
-  if (!Number.isSafeInteger(amount) || amount <= 0 || !clientRequestId) throw new Error('A valid amount and saved request ID are required.');
-  return accountRpc('create_crypto_unlock_request', { p_amount_fav: amount, p_client_request_id: clientRequestId }, userId);
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Enter a valid FAV amount.');
+  userId = await currentAccountId(supabase, userId);
+  const requests = await accountRequests(userId);
+  await requests.assertOwner();
+  const storage = window.localStorage;
+  let attempt = readUnlockAttempt(storage, userId);
+  if (attempt) {
+    if (attempt.amount !== String(amount) || (clientRequestId && clientRequestId !== attempt.id)) {
+      throw new Error('An earlier crypto request still needs confirmation. Retry its original amount before creating another request.');
+    }
+    const recorded = await getCryptoUnlockByClientId(attempt.id, userId);
+    if (recorded) {
+      if (String(recorded.gross_fav) !== attempt.amount || recorded.destination_address?.toLowerCase() !== attempt.address.toLowerCase() || Number(recorded.chain_id) !== attempt.chainId) {
+        throw new Error('The recorded request does not match this attempt. Contact support before continuing.');
+      }
+      clearUnlockAttempt(storage, userId, attempt.id);
+      return recorded;
+    }
+  }
+  if ((await getMyCryptoEligibility(userId))?.crypto_eligible !== true) {
+    throw new Error('Crypto requires verified age 18+, identity verification and recorded consent.');
+  }
+  const wallet = await getMyCryptoWallet(BASE_SEPOLIA.chainId, userId);
+  if (!wallet?.is_active || !wallet.wallet_address) throw new Error('Verify a Base Sepolia wallet before unlocking FAV.');
+  if (attempt && attempt.address.toLowerCase() !== wallet.wallet_address.toLowerCase()) {
+    throw new Error('The linked wallet changed. Contact support to reconcile the earlier request.');
+  }
+  if (!attempt) {
+    const id = clientRequestId || window.crypto?.randomUUID?.();
+    if (!id) throw new Error('This browser cannot generate a secure request id.');
+    attempt = saveUnlockAttempt(storage, { id, userId, address: wallet.wallet_address, amount: String(amount), chainId: BASE_SEPOLIA.chainId });
+  }
+  try {
+    const result = await requests.run(() => supabase.rpc('create_crypto_unlock_request', { p_amount_fav: amount, p_client_request_id: attempt.id }));
+    if (!result?.id) throw new Error('The request receipt could not be confirmed. Retry the same amount to check the saved request.');
+    clearUnlockAttempt(storage, userId, attempt.id);
+    return result;
+  } catch (error) {
+    if (isDefiniteRpcRejection(error)) clearUnlockAttempt(storage, userId, attempt.id);
+    throw error;
+  }
 }
+
 export function cancelCryptoUnlock(requestId, userId) {
   return accountRpc('cancel_my_crypto_unlock_request', { p_request_id: requestId }, userId);
 }

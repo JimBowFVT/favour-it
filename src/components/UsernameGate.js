@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { completeUsername, getMyUsernameStatus, suggestUsernames } from '../lib/usernames';
 import './UsernameGate.css';
 
-export default function UsernameGate({ displayName, email, onComplete }) {
+export default function UsernameGate({ displayName, email, onComplete, initialError = '' }) {
   const [username, setUsername] = useState('');
   const [suggestions, setSuggestions] = useState(() => suggestUsernames({ displayName, email }));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
   const normalized = useMemo(() => username.replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, ''), [username]);
   const roll = () => setSuggestions(suggestUsernames({ displayName, email }));
   const submit = async e => {
@@ -15,6 +15,12 @@ export default function UsernameGate({ displayName, email, onComplete }) {
     if (normalized.length < 3) return setError('Your @ must be at least 3 characters.');
     setBusy(true); setError('');
     try {
+      // Reconcile a failed status read/claim before attempting a username mutation.
+      const existing = await getMyUsernameStatus();
+      if (existing?.username_chosen === true && existing.username) {
+        onComplete(existing);
+        return;
+      }
       await completeUsername(normalized);
       const status = await getMyUsernameStatus();
       if (!status?.username || status.username_chosen !== true) throw new Error('Your username choice could not be confirmed. Please retry.');
