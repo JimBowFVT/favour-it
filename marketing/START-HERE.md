@@ -9,7 +9,7 @@ Start with 20 research interviews, then a supported cohort of up to 30 English-s
 1. Open the operating workbook in the delivered outputs folder. Change the start date if needed; dates are planning dates, not scheduled messages.
 2. Use [Interview guide](INTERVIEWS.md) to learn about real needs. Record exact evidence in the Interviews sheet, without publicising participants' identities.
 3. Use [Outreach pack](OUTREACH.md) for personalised invitations and one follow-up. You send messages yourself after selecting appropriate recipients.
-4. Review [Content pack](CONTENT.md), replace marked placeholders, and post only after a public landing URL is available. No messages or posts have been sent by this kit.
+4. Review [Content pack](CONTENT.md) and personalise the drafts. Research and educational posts can invite replies before a domain is available. Application posts need an accessible public landing URL and open collection. No messages or posts have been sent by this kit.
 5. Use [Programme operations](OPERATIONS.md) for screening, matching, onboarding, email consent and weekly reviews.
 6. Follow [Release and measurement](RELEASE.md) before opening applications or recruiting people to provide real work.
 
