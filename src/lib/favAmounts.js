@@ -1,3 +1,4 @@
+/* global BigInt */
 // Micro-FAV is an integer unit. Never route bigint ledger values through Number.
 const SCALE = BigInt(1000000);
 export function microFavInteger(value) {
