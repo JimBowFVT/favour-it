@@ -21,12 +21,11 @@ import FriendRequestCenter from './components/FriendRequestCenter';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
 import { getMyUsernameStatus } from './lib/usernames';
-import { claimDailyReward, getMyWallet } from './lib/wallet';
+import { getMyWallet } from './lib/wallet';
 
 const SESSION_TIMEOUT_MS = 6000;
 const PROFILE_TIMEOUT_MS = 8000;
 const USERNAME_STATUS_TIMEOUT_MS = 5000;
-const REWARD_TIMEOUT_MS = 5000;
 const WALLET_TIMEOUT_MS = 5000;
 const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
 
@@ -100,6 +99,9 @@ export default function AppShell() {
       const version = ++loadVersion;
       const userId = nextSession.user.id;
       const userEmail = nextSession.user.email?.toLowerCase();
+      if (sessionUserRef.current !== userId) {
+        setWallet(null); setProfile(null); setUsernameStatus(null); setRewardMessage('');
+      }
       sessionUserRef.current = userId;
 
       if (mounted && version === loadVersion) {
@@ -143,22 +145,9 @@ export default function AppShell() {
         if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
       }
 
-      if (!staffPath) {
-        try {
-          const reward = await withTimeout(claimDailyReward(), REWARD_TIMEOUT_MS, 'Daily reward timed out.');
-          if (mounted && version === loadVersion && reward?.claimed) {
-            setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.');
-            try {
-              const refreshedWallet = await withTimeout(getMyWallet(), WALLET_TIMEOUT_MS);
-              if (mounted && version === loadVersion) setWallet(refreshedWallet || null);
-            } catch (_) {}
-          }
-        } catch (rewardError) {
-          if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) {
-            setRewardMessage('Daily reward is unavailable right now.');
-          }
-        }
-      }
+      // Daily rewards are claimed explicitly in Wallet using the current offer API.
+      // Never mutate the user's balance during authentication or token refresh.
+
     };
 
     const initializeSession = async () => {
@@ -189,15 +178,11 @@ export default function AppShell() {
         if (!nextSession) return;
 
         const sameUser = sessionUserRef.current === nextSession.user.id;
-        sessionUserRef.current = nextSession.user.id;
-        setSession(nextSession);
-
-        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
-
-        if (event === 'SIGNED_IN') {
-          if (!sameUser) hydrateSession(nextSession, { showLoader: true });
+        if (!sameUser) {
+          hydrateSession(nextSession, { showLoader: true });
           return;
         }
+        setSession(nextSession);
 
         if (event === 'USER_UPDATED') {
           hydrateSession(nextSession, { showLoader: false });
@@ -274,7 +259,7 @@ export default function AppShell() {
   }
 
   return <>
-    <App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
+    <App key={session.user.id} initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
     <UsernameManager status={usernameStatus} onChanged={status => {
       localStorage.setItem(usernameCacheKey(session.user.id), status.username);
       setUsernameStatus(status);
@@ -288,6 +273,6 @@ export default function AppShell() {
     <PublicProfileHost session={session} />
     <ActivityCenter />
     <FriendRequestCenter />
-    <SettingsLauncher session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
+    <SettingsLauncher key={session.user.id} session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
   </>;
 }

@@ -40,11 +40,12 @@ test('wallet renders server balances and transaction details without issuing rew
   const onBalance = jest.fn();
   render(<WalletPage userId={owner} onBalance={onBalance} onOpenOrder={jest.fn()} onExplore={jest.fn()} />);
   expect(await screen.findByText('103.000001 FAV')).toBeInTheDocument();
+  await screen.findByRole('button', { name: 'Check today’s reward' });
   expect(onBalance).toHaveBeenCalledWith('103000001');
   expect(supabase.rpc.mock.calls.some(([name]) => name.includes('claim_') || name === 'record_my_reward_visit')).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: /Service earned/ }));
   const title = await screen.findByRole('heading', { name: 'Transaction details' });
-  expect(title).toHaveFocus();
+  await waitFor(() => expect(title).toHaveFocus());
   expect(within(title.closest('section')).getByText('3 FAV')).toBeInTheDocument();
 });
 
@@ -57,6 +58,7 @@ test('wallet failures do not fabricate an empty or zero balance; retry loads rea
   supabase.rpc.mockImplementation(async name => ({ data: replies[name] }));
   fireEvent.click(screen.getByRole('button', { name: 'Refresh wallet' }));
   expect(await screen.findByText('103.000001 FAV')).toBeInTheDocument();
+  await screen.findByRole('button', { name: 'Check today’s reward' });
 });
 
 test('activity pagination keeps the cutoff and filters execute on the server', async () => {
@@ -71,6 +73,7 @@ test('activity pagination keeps the cutoff and filters execute on the server', a
   fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'sale' } });
   fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
   await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('list_my_wallet_activity', expect.objectContaining({ p_filters: expect.objectContaining({ type: 'sale' }), p_cursor: null })));
+  await screen.findByRole('button', { name: 'Check today’s reward' });
 });
 
 test('transaction support uses the exact transaction and expected account', async () => {
@@ -85,6 +88,7 @@ test('transaction support uses the exact transaction and expected account', asyn
 test('changing accounts closes the wallet and removes the previous account data', async () => {
   render(<WalletPage userId={owner} />);
   await screen.findByText('103.000001 FAV');
+  await screen.findByRole('button', { name: 'Check today’s reward' });
   act(() => authChanged('SIGNED_IN', { user: { id: 'member-b' } }));
   expect(screen.getByRole('heading', { name: 'Wallet closed' })).toBeInTheDocument();
   expect(screen.queryByText('103.000001 FAV')).not.toBeInTheDocument();
