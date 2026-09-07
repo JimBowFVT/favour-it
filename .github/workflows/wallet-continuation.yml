@@ -1,0 +1,20 @@
+name: Wallet continuation verification
+on:
+  push:
+    branches: [fix/wallet-coins-sidebar-continuation]
+permissions:
+  contents: read
+jobs:
+  source-checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package tracked source for reproducible review
+        run: git archive --format=zip --output=wallet-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wallet-source-${{ github.sha }}
+          path: wallet-source.zip
+          retention-days: 3
+          if-no-files-found: error
