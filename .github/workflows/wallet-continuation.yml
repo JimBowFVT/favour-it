@@ -25,10 +25,10 @@ jobs:
           CI: 'true'
         run: npm test -- --watchAll=false --runInBand 2>&1 | tee wallet-react-tests.log
       - name: Lint new wallet components and helpers
-        run: ./node_modules/.bin/eslint src/components/WalletPage.js src/components/AppSidebar.js src/components/DailyRewardCard.js src/components/CryptoWalletPanel.js src/lib/favAmounts.js src/lib/walletActivity.js src/lib/wallet.js src/lib/crypto.js --max-warnings=0 2>&1 | tee wallet-lint.log
-      - name: Compile preview (existing warnings remain visible; not the release gate)
+        run: ./node_modules/.bin/eslint src/components/WalletPage.js src/components/AppSidebar.js src/components/DailyRewardCard.js src/components/CryptoWalletPanel.js src/lib/favAmounts.js src/lib/walletActivity.js src/lib/wallet.js src/lib/crypto.js src/lib/accountRequests.js src/lib/cryptoRecovery.js src/lib/age.js src/lib/auth.js src/components/WalletAccountSetup.js src/components/AuthGate.js src/components/UsernameGate.js src/App.js src/AppShell.js --max-warnings=0 2>&1 | tee wallet-lint.log
+      - name: Strict production compilation
         env:
-          CI: 'false'
+          CI: 'true'
         run: npm run build 2>&1 | tee wallet-build.log
       - name: Archive exact tested source
         if: always()
