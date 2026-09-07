@@ -27,7 +27,15 @@ export default function DailyRewardCard({ userId, onClaimed }) {
     try { const data = await api.rewardStatus(); if (version === revision.current) setStatus(data); }
     catch (err) { if (version === revision.current) setError(err.message || 'Could not load rewards.'); }
   }, [api]);
-  useEffect(() => { load(); return () => { revision.current += 1; }; }, [load]);
+  useEffect(() => { load(); return () => { revision.current += 1; api.cancel(); }; }, [api, load]);
+
+  useEffect(() => {
+    if (busy || !status?.next_reset_at || !status?.server_time) return undefined;
+    const delay = new Date(status.next_reset_at).getTime() - new Date(status.server_time).getTime();
+    if (!Number.isFinite(delay)) return undefined;
+    const timer = setTimeout(load, Math.max(1000, Math.min(delay + 300, 86400300)));
+    return () => clearTimeout(timer);
+  }, [status?.next_reset_at, status?.server_time, busy, load]);
   const act = async claim => {
     if (locked.current) return;
     const version = revision.current;

@@ -6,7 +6,9 @@ const root = path.resolve(__dirname, '..');
 const sourceUrl = text => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
 const moneyUrl = sourceUrl(fs.readFileSync(path.join(root, 'src/lib/favAmounts.js'), 'utf8'));
 const money = import(moneyUrl);
-const activity = import(sourceUrl(fs.readFileSync(path.join(root, 'src/lib/walletActivity.js'), 'utf8').replace("'./favAmounts'", JSON.stringify(moneyUrl))));
+const accountUrl = sourceUrl(fs.readFileSync(path.join(root, 'src/lib/accountRequests.js'), 'utf8'));
+const account = import(accountUrl);
+const activity = import(sourceUrl(fs.readFileSync(path.join(root, 'src/lib/walletActivity.js'), 'utf8').replace("'./favAmounts'", JSON.stringify(moneyUrl)).replace("'./accountRequests'", JSON.stringify(accountUrl))));
 function client(responses, owner = 'member-a') {
   const calls = [];
   const state = { owner };
@@ -113,4 +115,60 @@ test('manual reward claims require an offer and never invoke the obsolete automa
   await api.rewardStatus();await api.prepareReward();await assert.rejects(api.claimReward(null));await api.claimReward('offer');
   assert.deepEqual(c.calls.map(x=>x.name),['get_my_daily_reward_status','record_my_reward_visit','claim_my_daily_reward']);
   assert.deepEqual(c.calls[2].args,{p_offer_id:'offer'});
+});
+
+test('a timed-out auth read cannot send a delayed wallet mutation', async () => {
+  const { createAccountRequests } = await account;
+  let resolveSession;
+  let calls = 0;
+  const c = { auth: { getSession: () => new Promise(resolve => { resolveSession = resolve; }) } };
+  const requests = createAccountRequests(c, 'member-a', 5);
+  await assert.rejects(requests.run(() => { calls++; return Promise.resolve({ data: {} }); }), /timed out|interrupted/);
+  resolveSession({ data: { session: { user: { id: 'member-a' } } } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 0);
+});
+test('wallet requests use the captured JWT and an abort signal', async () => {
+  const { createAccountRequests } = await account;
+  const headers = {}; let signal;
+  const c = { auth: { getSession: async () => ({ data: { session: { user: { id: 'member-a' }, access_token: 'original-jwt' } } }) } };
+  const query = { setHeader(key, value) { headers[key] = value; return this; }, abortSignal(value) { signal = value; return this; }, then(resolve) { return Promise.resolve({ data: { ok: true } }).then(resolve); } };
+  assert.deepEqual(await createAccountRequests(c, 'member-a').run(() => query), { ok: true });
+  assert.equal(headers.Authorization, 'Bearer original-jwt');
+  assert.ok(signal instanceof AbortSignal);
+});
+test('cancelling a mounted wallet aborts its pending requests', async () => {
+  const { createAccountRequests } = await account;
+  const c = client(() => new Promise(() => {}));
+  const requests = createAccountRequests(c, 'member-a');
+  const pending = requests.run(() => c.rpc('test', {}));
+  requests.cancel();
+  await assert.rejects(pending, /interrupted|cancelled/);
+});
+
+const recovery = import(sourceUrl(fs.readFileSync(path.join(root, 'src/lib/cryptoRecovery.js'), 'utf8').replace("'./favAmounts'", JSON.stringify(moneyUrl))));
+const storage = () => { const entries = new Map(); return { getItem: key => entries.get(key) || null, setItem: (key,value) => entries.set(key,value), removeItem: key => entries.delete(key) }; };
+const attempt = { id: '11111111-1111-4111-8111-111111111111', userId: 'member-a', address: `0x${'1'.repeat(40)}`, chainId: 84532, amount: '1000000' };
+test('crypto recovery persists the request ID and isolates accounts across reloads', async () => {
+  const r = await recovery; const s = storage();
+  r.saveUnlockAttempt(s, attempt);
+  assert.deepEqual(r.readUnlockAttempt(s, 'member-a'), attempt);
+  assert.equal(r.readUnlockAttempt(s, 'member-b'), null);
+  assert.throws(() => r.saveUnlockAttempt(s, { ...attempt, id: '22222222-2222-4222-8222-222222222222' }), /earlier/);
+  r.clearUnlockAttempt(s, 'member-a', 'different');
+  assert.deepEqual(r.readUnlockAttempt(s, 'member-a'), attempt);
+  r.clearUnlockAttempt(s, 'member-a', attempt.id);
+  assert.equal(r.readUnlockAttempt(s, 'member-a'), null);
+});
+test('broken storage never silently discards an unresolved crypto request', async () => {
+  const r = await recovery;
+  for (const raw of ['{oops', JSON.stringify({ ...attempt, amount: '-1' }), JSON.stringify({ ...attempt, chainId: 1 }), JSON.stringify({ ...attempt, userId: 'member-b' })]) {
+    assert.throws(() => r.readUnlockAttempt({getItem: () => raw}, 'member-a'), /review/);
+  }
+  assert.throws(() => r.saveUnlockAttempt({getItem: () => null, setItem: () => {}}, attempt), /save/);
+});
+test('only explicit aborted database responses allow clearing a failed unlock attempt', async () => {
+  const r = await recovery;
+  assert.equal(r.isDefiniteRpcRejection({code:'P0001'}), true);
+  for (const error of [new Error('timeout'), {code:'503'}, {code:''}, {message:'network failure'}]) assert.equal(r.isDefiniteRpcRejection(error), false);
 });

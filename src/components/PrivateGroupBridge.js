@@ -62,7 +62,7 @@ export default function PrivateGroupBridge({ session }) {
   const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [muteVersion, setMuteVersion] = useState(0);
+  const [, setMuteVersion] = useState(0);
   const typingChannelRef = useRef(null);
   const typingTimerRef = useRef(null);
 

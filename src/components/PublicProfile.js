@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { blockUser, cancelFriendRequest, getMySocialGraph, removeFriend, respondFriendRequest, sendFriendRequest, unblockUser } from '../lib/social';
 import { getPublicProfile, getPublicProfileByUsername, reportUser } from '../lib/publicProfile';
 import './PublicProfile.css';
@@ -15,7 +15,7 @@ export default function PublicProfile({ userId, username, session, onClose, onMe
   const [menuOpen, setMenuOpen] = useState(false);
   const requestIdRef = useRef(0);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setError('');
@@ -44,13 +44,13 @@ export default function PublicProfile({ userId, username, session, onClose, onMe
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  };
+  }, [userId, username]);
 
   useEffect(() => {
     if (userId || username) load();
     else { requestIdRef.current += 1; setProfile(null); setLoading(false); }
     return () => { requestIdRef.current += 1; };
-  }, [userId, username]);
+  }, [userId, username, load]);
 
   const action = async fn => {
     setBusy(true);

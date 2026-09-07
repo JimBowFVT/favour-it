@@ -4,6 +4,7 @@ import { formatMicroFav } from '../lib/favAmounts';
 import { createWalletApi, validateWalletFilters, walletStatementCsv, WALLET_TYPES, WALLET_STATUSES } from '../lib/walletActivity';
 import CryptoWalletPanel from './CryptoWalletPanel';
 import DailyRewardCard from './DailyRewardCard';
+import WalletAccountSetup from './WalletAccountSetup';
 import './WalletPage.css';
 
 const EMPTY_FILTERS = { type: 'all', status: 'all', search: '', from: '', to: '' };
@@ -37,6 +38,7 @@ export default function WalletPage({ userId, onBalance, onOpenOrder, onExplore }
     actionLock.current = false;
     setBusy(''); setLoading(true); setError(''); setNotice('');
     setOverview(null); setPage(null); setDetail(null); setSupport('');
+    onBalance?.(null);
     try {
       const [nextOverview, nextPage] = await Promise.all([api.overview(), api.activity(filters)]);
       if (version !== revision.current) return;
@@ -52,8 +54,8 @@ export default function WalletPage({ userId, onBalance, onOpenOrder, onExplore }
 
   useEffect(() => {
     refresh();
-    return () => { revision.current += 1; };
-  }, [refresh]);
+    return () => { revision.current += 1; api.cancel(); };
+  }, [refresh, api]);
   useEffect(() => {
     if (!supabase) return undefined;
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
@@ -133,6 +135,7 @@ export default function WalletPage({ userId, onBalance, onOpenOrder, onExplore }
       {overview.held_orders?.length > 0 && <section className="wallet-card"><h2>Payments protected in escrow</h2>{overview.held_orders.map(order => <button className="wallet-order" type="button" key={order.order_id} onClick={() => onOpenOrder(order.order_id)}><span><strong>{order.title}</strong><small>{humanize(order.status)}</small></span><Amount value={order.amount_fav} /><span aria-hidden="true">→</span></button>)}</section>}
     </>}
 
+    {overview?.wallet && <WalletAccountSetup key={`setup-${userId}`} userId={userId} onSaved={refresh} />}
     {overview?.wallet && <DailyRewardCard key={userId} userId={userId} onClaimed={refresh} />}
     <section className="wallet-card" aria-labelledby="wallet-activity-title">
       <h2 id="wallet-activity-title">Wallet activity</h2>
@@ -161,6 +164,6 @@ export default function WalletPage({ userId, onBalance, onOpenOrder, onExplore }
       <form className="wallet-support" onSubmit={submitSupport}><label htmlFor="wallet-support-details">Report a problem with this transaction</label><textarea id="wallet-support-details" minLength={10} maxLength={3600} required value={support} onChange={e => setSupport(e.target.value)} placeholder="Describe the issue. Do not include passwords, private keys or recovery phrases." /><button type="submit" className="secondary" disabled={Boolean(busy) || support.trim().length < 10}>{busy === 'support' ? 'Sending…' : 'Send to support'}</button><small>This requests a review. It does not issue a refund or change your balance.</small></form>
     </section>}
 
-    <details className="wallet-card wallet-crypto-details" onToggle={event => setCryptoOpen(event.currentTarget.open)}><summary>FAV coins & optional testnet wallet</summary><p>Your internal FAV balance and an external blockchain wallet are separate. A testnet token is not cash, and no sale or redemption is guaranteed.</p>{cryptoOpen && <CryptoWalletPanel key={userId} onWalletChanged={refresh} />}</details>
+    <details className="wallet-card wallet-crypto-details" onToggle={event => setCryptoOpen(event.currentTarget.open)}><summary>FAV coins & optional testnet wallet</summary><p>Your internal FAV balance and an external blockchain wallet are separate. A testnet token is not cash, and no sale or redemption is guaranteed.</p>{cryptoOpen && <CryptoWalletPanel userId={userId} key={userId} onWalletChanged={refresh} />}</details>
   </section>;
 }

@@ -1,4 +1,5 @@
 import { favDecimal } from './favAmounts';
+import { createAccountRequests } from './accountRequests';
 
 export const WALLET_TYPES = ['all', 'daily_reward', 'premium_reward', 'purchase', 'escrow_hold', 'escrow_release', 'refund', 'fee', 'sale', 'adjustment'];
 export const WALLET_STATUSES = ['all', 'posted', 'funded', 'in_progress', 'delivered', 'disputed', 'completed', 'cancelled'];
@@ -16,21 +17,14 @@ export function validateWalletFilters(input = {}) {
 
 // Session comparisons prevent stale UI/downloads. Authorization remains in the RPCs.
 export function createWalletApi(client, expectedUserId) {
-  const assertOwner = async () => {
-    if (!client || !expectedUserId) throw new Error('Sign in to open your wallet.');
-    const { data, error } = await client.auth.getSession();
-    if (error) throw error;
-    if (data?.session?.user?.id !== expectedUserId) throw new Error('Your signed-in account changed. Reopen Wallet.');
-  };
+  const requests = createAccountRequests(client, expectedUserId);
   const rpc = async (name, args = {}) => {
-    await assertOwner();
-    const { data, error } = await client.rpc(name, args);
-    await assertOwner();
-    if (error) throw error;
+    const data = await requests.run(() => client.rpc(name, args));
     if (data === null || data === undefined) throw new Error('Wallet data is unavailable. Refresh and try again.');
     return data;
   };
   return {
+    cancel: requests.cancel,
     overview: () => rpc('get_my_wallet_overview'),
     rewardStatus: () => rpc('get_my_daily_reward_status'),
     prepareReward: () => rpc('record_my_reward_visit'),
@@ -63,7 +57,7 @@ export function createWalletApi(client, expectedUserId) {
         cursor = page.next_cursor;
       } while (cursor !== null);
       if (items.length !== statement.row_count) throw new Error('The statement is incomplete. Start the download again.');
-      await assertOwner();
+      await requests.assertOwner();
       return { ...statement, items };
     },
   };
@@ -77,5 +71,5 @@ function csvCell(value) {
 export function walletStatementCsv(statement) {
   const fields = ['Statement ID', 'Snapshot (UTC)', 'Reference', 'Posted (UTC)', 'Type', 'Description', 'Available change (FAV)', 'Held change (FAV)', 'Order ID', 'Order status'];
   const rows = statement.items.map(item => [statement.id, statement.cutoff, item.id, item.created_at, item.entry_type, item.description, favDecimal(item.amount_fav), item.held_change_fav == null ? '' : favDecimal(item.held_change_fav), item.order_id, item.order_status]);
-  return '\uFEFF' + [fields, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
+  return '\uFEFF' + [fields, ...rows].map(row => row.map((value, index) => index === 6 || index === 7 ? `"${String(value ?? '').replace(/"/g, '""')}"` : csvCell(value)).join(',')).join('\r\n');
 }

@@ -218,7 +218,7 @@ function Profile({ fav, myDeals, orders, onCreate, onOrders, onManageDeals, sess
 
   return <section className="page-section">
     <div className="profile-hero">
-      <div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>✓ Account verified</span><span>◈ Favourit member</span></div></div></div>
+      <div className="profile-main"><Avatar initials={initials} large /><div><div className="eyebrow">YOUR PROFILE</div><h1>{name}</h1><p className="profile-handle">@{usernameStatus?.username || 'username'}</p><p>Creator · Buyer · Favourit member</p><div className="profile-tags"><span>{session?.user?.email_confirmed_at ? '✓ Email verified' : 'Email not verified'}</span><span>◈ Favourit member</span></div></div></div>
       <button className="secondary" onClick={onSignOut}>Sign out</button>
     </div>
     <div className="profile-stats">
@@ -236,7 +236,7 @@ function Profile({ fav, myDeals, orders, onCreate, onOrders, onManageDeals, sess
 }
 
 function App({ initialWallet, session, rewardMessage, usernameStatus }) {
-  const [active, setActive] = useState('Home');
+  const [active, setActive] = useState(() => window.location.hash === '#wallet' ? 'Wallet' : 'Home');
   const [query, setQuery] = useState('');
   const [fav, setFav] = useState(initialWallet?.available_fav ?? null);
   const [sidebarOpen, setSidebarOpen] = useState(() => Boolean(window.matchMedia?.('(min-width: 1000px)').matches));
@@ -271,6 +271,7 @@ function App({ initialWallet, session, rewardMessage, usernameStatus }) {
     setSelectedOrder(null);
     setEditingDeal(null);
     setActive(item);
+    window.history.replaceState(null, '', item === 'Wallet' ? '#wallet' : window.location.pathname + window.location.search);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

@@ -27,7 +27,6 @@ const SESSION_TIMEOUT_MS = 6000;
 const PROFILE_TIMEOUT_MS = 8000;
 const USERNAME_STATUS_TIMEOUT_MS = 5000;
 const WALLET_TIMEOUT_MS = 5000;
-const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
 
 function withTimeout(promise, ms, message = 'Request timed out. Please try again.') {
   let timer;
@@ -49,20 +48,13 @@ function isMiddlemanPanelPath() {
   return normalizedPath() === '/middleman';
 }
 
-function usernameCacheKey(userId) {
-  return userId ? `favourit_username:${userId}` : '';
-}
-
-function getPendingOnboarding() {
-  try { return JSON.parse(localStorage.getItem(USERNAME_ONBOARDING_KEY) || 'null'); }
-  catch (_) { return null; }
-}
-
 export default function AppShell() {
   const [session, setSession] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [profile, setProfile] = useState(null);
   const [usernameStatus, setUsernameStatus] = useState(null);
+  const [usernameError, setUsernameError] = useState('');
+  const [setupRetry, setSetupRetry] = useState(0);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [uiReady, setUiReady] = useState(false);
   const [rewardMessage, setRewardMessage] = useState('');
@@ -98,7 +90,6 @@ export default function AppShell() {
 
       const version = ++loadVersion;
       const userId = nextSession.user.id;
-      const userEmail = nextSession.user.email?.toLowerCase();
       if (sessionUserRef.current !== userId) {
         setWallet(null); setProfile(null); setUsernameStatus(null); setRewardMessage('');
       }
@@ -131,18 +122,14 @@ export default function AppShell() {
       try {
         const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
         if (!mounted || version !== loadVersion) return;
-        const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null;
-        setUsernameStatus(normalizedStatus);
-        if (normalizedStatus?.username) {
-          localStorage.setItem(usernameCacheKey(userId), normalizedStatus.username);
-          const pending = getPendingOnboarding();
-          if (pending && ((pending.userId && pending.userId === userId) || pending.email === userEmail)) {
-            localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-          }
+        if (!status || typeof status.username_chosen !== 'boolean') throw new Error('Your username status could not be confirmed.');
+        setUsernameStatus(status);
+        setUsernameError('');
+      } catch (error) {
+        if (mounted && version === loadVersion) {
+          setUsernameStatus(null);
+          setUsernameError(error.message || 'Could not check your username.');
         }
-      } catch (_) {
-        const cached = localStorage.getItem(usernameCacheKey(userId));
-        if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
       }
 
       // Daily rewards are claimed explicitly in Wallet using the current offer API.
@@ -195,7 +182,7 @@ export default function AppShell() {
       loadVersion += 1;
       listener.subscription.unsubscribe();
     };
-  }, [staffPath]);
+  }, [staffPath, setupRetry]);
 
   useEffect(() => {
     if (!session?.user?.id || !supabase || staffPath) return undefined;
@@ -243,28 +230,25 @@ export default function AppShell() {
     return <><MiddlemanPanel /><PublicProfileHost session={session} /></>;
   }
 
-  const pending = getPendingOnboarding();
-  const onboardingPending = Boolean(pending && ((pending.userId && pending.userId === session.user.id) || pending.email === session.user.email?.toLowerCase()));
-
-  if (onboardingPending && !usernameStatus?.username) {
-    return <UsernameGate
-      displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''}
-      email={usernameStatus?.email || session.user.email || ''}
-      onComplete={profileData => {
-        localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-        localStorage.setItem(usernameCacheKey(session.user.id), profileData.username);
-        setUsernameStatus({ ...usernameStatus, ...profileData, username_chosen: true });
-      }}
+  if (!usernameStatus) {
+    return <section className="auth-page"><div className="auth-card"><h1>Checking your account setup</h1>
+      {usernameError ? <><p role="alert">{usernameError}</p><button className="primary" type="button" onClick={() => { setUsernameError(''); setSetupRetry(value => value + 1); }}>Retry account setup</button></> : <p role="status">Loading your saved username choice…</p>}
+    </div></section>;
+  }
+  if (usernameStatus.username_chosen !== true) {
+    return <UsernameGate key={session.user.id}
+      displayName={usernameStatus.display_name || session.user.user_metadata?.display_name || ''}
+      email={usernameStatus.email || session.user.email || ''}
+      onComplete={status => setUsernameStatus(status)}
     />;
   }
 
   return <>
-    <App key={session.user.id} initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
+    <App key={`app:${session.user.id}`} initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
     <UsernameManager status={usernameStatus} onChanged={status => {
-      localStorage.setItem(usernameCacheKey(session.user.id), status.username);
       setUsernameStatus(status);
     }} />
-    <DirectMessagingV2 session={session} />
+    <DirectMessagingV2 key={`messages:${session.user.id}`} session={session} />
     <DirectMessageBridge />
     <MessageRequestListBridge />
     <PrivateGroupBridge session={session} />
@@ -273,6 +257,6 @@ export default function AppShell() {
     <PublicProfileHost session={session} />
     <ActivityCenter />
     <FriendRequestCenter />
-    <SettingsLauncher key={session.user.id} session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
+    <SettingsLauncher key={`settings:${session.user.id}`} session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
   </>;
 }

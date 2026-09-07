@@ -18,6 +18,7 @@ let replies;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  window.localStorage.clear();
   reward = { reason: 'visit_required', eligible: false, claimed: false, current_streak: 0, reward_date: '2026-09-07', amount_micro_fav: '50000' };
   replies = {
     get_my_wallet_overview: overview,
@@ -26,13 +27,18 @@ beforeEach(() => {
     submit_my_wallet_support_request: { id: 'support-a' },
     get_my_daily_reward_status: reward,
     get_crypto_chain_status: { chain_id: 84532, token_address: null, unlock_enabled: false, initial_cap_micro_fav: 10000000000000 },
-    get_my_account_eligibility: { crypto_eligible: false, identity_status: 'unverified' },
+    get_my_account_eligibility: { crypto_eligible: false, identity_status: 'unverified', birth_date_required: false },
     get_my_fav_balance_breakdown: { available_fav: 103000001, earned_fav: 97000000, crypto_eligible_fav: 1000000, crypto_maturing_fav: 96000000, pending_crypto_unlock_fav: 0, crypto_unlock_maturity_hours: 120, crypto_unlock_fee_bps: 250 },
   };
   supabase.auth.getSession.mockResolvedValue({ data: { session: { user: { id: owner } } } });
   supabase.auth.onAuthStateChange.mockImplementation(callback => { authChanged = callback; return { data: { subscription: { unsubscribe: jest.fn() } } }; });
   supabase.rpc.mockImplementation(async name => ({ data: replies[name], error: null }));
-  supabase.from.mockImplementation(() => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }), order: () => ({ limit: async () => ({ data: [] }) }) }) }));
+  supabase.from.mockImplementation(() => {
+    const query = { select: jest.fn(), eq: jest.fn(), order: jest.fn(), limit: jest.fn(), maybeSingle: jest.fn() };
+    for (const method of ['select', 'eq', 'order']) query[method].mockReturnValue(query);
+    query.limit.mockResolvedValue({ data: [] }); query.maybeSingle.mockResolvedValue({ data: null });
+    return query;
+  });
   window.matchMedia = jest.fn(() => ({ matches: true, addEventListener: jest.fn(), removeEventListener: jest.fn() }));
 });
 
@@ -46,7 +52,7 @@ test('wallet renders server balances and transaction details without issuing rew
   fireEvent.click(screen.getByRole('button', { name: /Service earned/ }));
   const title = await screen.findByRole('heading', { name: 'Transaction details' });
   await waitFor(() => expect(title).toHaveFocus());
-  expect(within(title.closest('section')).getByText('3 FAV')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: 'Transaction details' })).getByText('3 FAV')).toBeInTheDocument();
 });
 
 test('wallet failures do not fabricate an empty or zero balance; retry loads real data', async () => {
@@ -123,10 +129,31 @@ test('sidebar selects Wallet and closes mobile navigation with Escape', () => {
 });
 
 test('mature earnings do not enable crypto for an ineligible account or undeployed token', async () => {
-  render(<CryptoWalletPanel />);
+  render(<CryptoWalletPanel userId={owner} />);
   expect(await screen.findByText('Crypto access is not enabled for this account')).toBeInTheDocument();
   expect(screen.getByText('5 days safety window')).toBeInTheDocument();
   expect(screen.getByText('Testnet token deployment pending')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Connect & verify testnet wallet' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Queue crypto unlock' })).not.toBeInTheDocument();
+});
+
+test('existing accounts can save missing birth date through the private server API', async () => {
+  replies.get_my_account_eligibility = { birth_date_required: true, crypto_eligible: false };
+  replies.set_my_birth_date = { birth_date_required: false, crypto_eligible: false };
+  render(<WalletPage userId={owner} />);
+  fireEvent.change(await screen.findByLabelText('Date of birth'), { target: { value:'2000-01-01' } });
+  replies.get_my_account_eligibility = { birth_date_required: false, crypto_eligible: false };
+  fireEvent.click(screen.getByRole('button', { name:'Save date of birth' }));
+  await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('set_my_birth_date', { p_birth_date:'2000-01-01' }));
+  await waitFor(() => expect(screen.queryByLabelText('Date of birth')).not.toBeInTheDocument());
+  await screen.findByRole('button', {name:'Check today’s reward'});
+});
+test('an invalid date never calls the account-update RPC', async () => {
+  replies.get_my_account_eligibility = { birth_date_required: true, crypto_eligible: false };
+  render(<WalletPage userId={owner} />);
+  const date = new Date(); date.setUTCFullYear(date.getUTCFullYear()-5);
+  fireEvent.change(await screen.findByLabelText('Date of birth'), { target: { value:date.toISOString().slice(0,10) } });
+  fireEvent.click(screen.getByRole('button', { name:'Save date of birth' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('at least 13');
+  expect(supabase.rpc.mock.calls.some(([name])=>name==='set_my_birth_date')).toBe(false);
 });
