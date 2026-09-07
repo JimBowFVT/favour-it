@@ -64,3 +64,9 @@ describe('order normalization', () => {
     expect(order.buyerBrief).toBe('');
   });
 });
+
+test('order history prefers the original title and category over an edited service listing', () => {
+  const order = normalizeOrder({ title: 'Edited title', category: 'Edited category', package_snapshot: { deal_title: 'Original service', deal_category: 'Original category' } });
+  expect(order.title).toBe('Original service');
+  expect(order.category).toBe('Original category');
+});

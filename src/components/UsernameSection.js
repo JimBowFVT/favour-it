@@ -25,7 +25,7 @@ export default function UsernameSection({ status: initialStatus = null, compact 
       setUsername(next.username || '');
     }).catch(() => {});
     return () => { active = false; };
-  }, [initialStatus?.username, initialStatus?.username_last_changed_at]);
+  }, [initialStatus]);
 
   const normalized = useMemo(() => username.replace(/^@/, '').toLowerCase().replace(/[^a-z0-9_]/g, ''), [username]);
   const lastChanged = status?.username_last_changed_at ? new Date(status.username_last_changed_at) : null;

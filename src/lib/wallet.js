@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { formatMicroFav, microFavInteger } from './favAmounts';
+import { createAccountRequests, currentAccountId } from './accountRequests';
 
 const MICRO_FAV = 1_000_000;
 
@@ -7,50 +9,32 @@ export function microFavToFav(value) {
 }
 
 export function formatFav(value) {
-  return microFavToFav(value).toLocaleString(undefined, { maximumFractionDigits: 6 });
+  return formatMicroFav(value);
 }
 
 export async function getMyWallet() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data, error } = await supabase
-    .from('wallets')
-    .select('user_id, available_fav, held_fav, updated_at')
-    .eq('user_id', user.id)
-    .single();
-
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  return data;
+  const userId = data.session?.user?.id;
+  if (!userId) return null;
+  const requests = createAccountRequests(supabase, userId);
+  const overview = await requests.run(() => supabase.rpc('get_my_wallet_overview'));
+  return overview?.wallet ? { user_id: userId, ...overview.wallet } : null;
 }
 
-export async function getMyFavBalanceBreakdown() {
-  const { data, error } = await supabase.rpc('get_my_fav_balance_breakdown');
-  if (error) throw error;
+export async function getMyFavBalanceBreakdown(userId) {
+  userId = await currentAccountId(supabase, userId);
+  const requests = createAccountRequests(supabase, userId);
+  const data = await requests.run(() => supabase.rpc('get_my_fav_balance_breakdown'));
   const value = Array.isArray(data) ? data[0] : data;
-  if (!value) return null;
-  return {
-    available_fav: Number(value.available_fav || 0),
-    held_fav: Number(value.held_fav || 0),
-    reward_fav: Number(value.reward_fav || 0),
-    purchased_fav: Number(value.purchased_fav || 0),
-    earned_fav: Number(value.earned_fav || 0),
-    legacy_fav: Number(value.legacy_fav || 0),
-    crypto_eligible_fav: Number(value.crypto_eligible_fav || 0),
-    pending_crypto_unlock_fav: Number(value.pending_crypto_unlock_fav || 0),
-    crypto_unlock_fee_bps: Number(value.crypto_unlock_fee_bps || 0),
-  };
-}
-
-export async function claimDailyReward() {
-  const { data, error } = await supabase.rpc('claim_daily_reward');
-  if (error) throw error;
-
-  const amount = Number(Array.isArray(data) ? data[0] : data || 0);
-  return {
-    reward_micro_fav: amount,
-    reward_fav: microFavToFav(amount),
-    claimed: true,
-    crypto_withdrawable: false,
-  };
+  if (!value) throw new Error('Your balance breakdown is unavailable.');
+  const result = { ...value };
+  for (const field of ['available_fav', 'held_fav', 'reward_fav', 'purchased_fav', 'earned_fav', 'legacy_fav', 'crypto_eligible_fav', 'crypto_maturing_fav', 'pending_crypto_unlock_fav']) {
+    // Unknown stays unknown; unsafe JSON numbers cause a visible error, never rounding.
+    result[field] = value[field] == null ? null : microFavInteger(value[field]).toString();
+  }
+  result.crypto_unlock_fee_bps = value.crypto_unlock_fee_bps == null ? null : Number(value.crypto_unlock_fee_bps);
+  result.crypto_unlock_maturity_hours = value.crypto_unlock_maturity_hours == null ? null : Number(value.crypto_unlock_maturity_hours);
+  result.next_crypto_eligible_at = value.next_crypto_eligible_at || null;
+  return result;
 }

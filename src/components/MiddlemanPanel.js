@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatFav } from '../lib/wallet';
 import { getMyMiddlemanQueue, getMyStaffRole } from '../lib/staff';
 import { getAssignedOrderConversation, getAssignedConversationMessages, markMiddlemanConversationRead, middlemanCancelOrder, middlemanResolveDispute } from '../lib/middleman';
@@ -22,14 +22,15 @@ export default function MiddlemanPanel() {
 
   const selected = useMemo(() => queue.find(item => item.order_id === selectedId) || null, [queue, selectedId]);
 
-  const refreshQueue = async keepSelection => {
+  const refreshQueue = useCallback(async keepSelection => {
     const data = await getMyMiddlemanQueue();
     setQueue(data);
-    if (keepSelection && data.some(item => item.order_id === keepSelection)) setSelectedId(keepSelection);
-    else if (!selectedId && data[0]) setSelectedId(data[0].order_id);
-    else if (selectedId && !data.some(item => item.order_id === selectedId)) setSelectedId(data[0]?.order_id || '');
+    setSelectedId(current => {
+      const wanted = keepSelection || current;
+      return data.some(item => item.order_id === wanted) ? wanted : data[0]?.order_id || '';
+    });
     return data;
-  };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -46,7 +47,7 @@ export default function MiddlemanPanel() {
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [refreshQueue]);
 
   useEffect(() => {
     if (!selectedId || role !== 'middleman') {

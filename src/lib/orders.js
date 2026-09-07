@@ -11,8 +11,8 @@ const normalizeOrder = (row) => {
   const buyerTotalMicro = Number(row.buyer_total_fav || (amountMicro + buyerFeeMicro));
   return {
     id: row.id,
-    title: row.title || snapshot.deal_title || 'Favourit order',
-    category: row.category || snapshot.deal_category || '',
+    title: snapshot.deal_title || row.title || 'Favourit order',
+    category: snapshot.deal_category || row.category || '',
     seller: row.seller_name || row.seller || 'Favourit seller',
     sellerUsername: row.seller_username || '',
     sellerId: row.seller_id,

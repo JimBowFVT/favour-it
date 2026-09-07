@@ -1,0 +1,46 @@
+name: Wallet logic and original UI verification
+on:
+  push:
+    branches: [fix/wallet-coins-sidebar-continuation]
+permissions:
+  contents: read
+jobs:
+  wallet-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Exact amounts, account isolation and full statement tests
+        run: npm run test:wallet 2>&1 | tee wallet-core-tests.log
+      - name: Original UI restoration regression
+        run: node --test tests/ui-restoration.test.cjs
+      - name: React regression tests
+        env:
+          CI: 'true'
+        run: npm test -- --watchAll=false --runInBand 2>&1 | tee wallet-react-tests.log
+      - name: Lint new wallet components and helpers
+        run: ./node_modules/.bin/eslint src/components/CryptoWalletPanel.js src/lib/favAmounts.js src/lib/walletActivity.js src/lib/wallet.js src/lib/crypto.js src/lib/accountRequests.js src/lib/cryptoRecovery.js src/lib/age.js src/lib/auth.js src/components/AuthGate.js src/components/UsernameGate.js src/App.js src/AppShell.js --max-warnings=0 2>&1 | tee wallet-lint.log
+      - name: Strict production compilation
+        env:
+          CI: 'true'
+        run: npm run build 2>&1 | tee wallet-build.log
+      - name: Archive exact tested source
+        if: always()
+        run: git archive --format=zip --output=wallet-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wallet-verification-${{ github.sha }}
+          path: |
+            wallet-*.log
+            wallet-source.zip
+          retention-days: 3
+          if-no-files-found: error

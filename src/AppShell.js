@@ -21,14 +21,12 @@ import FriendRequestCenter from './components/FriendRequestCenter';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getCurrentProfile } from './lib/profile';
 import { getMyUsernameStatus } from './lib/usernames';
-import { claimDailyReward, getMyWallet } from './lib/wallet';
+import { getMyWallet } from './lib/wallet';
 
 const SESSION_TIMEOUT_MS = 6000;
 const PROFILE_TIMEOUT_MS = 8000;
 const USERNAME_STATUS_TIMEOUT_MS = 5000;
-const REWARD_TIMEOUT_MS = 5000;
 const WALLET_TIMEOUT_MS = 5000;
-const USERNAME_ONBOARDING_KEY = 'favourit_username_onboarding_pending';
 
 function withTimeout(promise, ms, message = 'Request timed out. Please try again.') {
   let timer;
@@ -50,20 +48,12 @@ function isMiddlemanPanelPath() {
   return normalizedPath() === '/middleman';
 }
 
-function usernameCacheKey(userId) {
-  return userId ? `favourit_username:${userId}` : '';
-}
-
-function getPendingOnboarding() {
-  try { return JSON.parse(localStorage.getItem(USERNAME_ONBOARDING_KEY) || 'null'); }
-  catch (_) { return null; }
-}
-
 export default function AppShell() {
   const [session, setSession] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [profile, setProfile] = useState(null);
   const [usernameStatus, setUsernameStatus] = useState(null);
+  const [usernameError, setUsernameError] = useState('');
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [uiReady, setUiReady] = useState(false);
   const [rewardMessage, setRewardMessage] = useState('');
@@ -86,6 +76,7 @@ export default function AppShell() {
       setWallet(null);
       setProfile(null);
       setUsernameStatus(null);
+      setUsernameError('');
       setRewardMessage('');
       setUiReady(true);
       setLoading(false);
@@ -99,7 +90,9 @@ export default function AppShell() {
 
       const version = ++loadVersion;
       const userId = nextSession.user.id;
-      const userEmail = nextSession.user.email?.toLowerCase();
+      if (sessionUserRef.current !== userId) {
+        setWallet(null); setProfile(null); setUsernameStatus(null); setUsernameError(''); setRewardMessage('');
+      }
       sessionUserRef.current = userId;
 
       if (mounted && version === loadVersion) {
@@ -129,36 +122,19 @@ export default function AppShell() {
       try {
         const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
         if (!mounted || version !== loadVersion) return;
-        const normalizedStatus = status?.username ? { ...status, username_chosen: true } : status || null;
-        setUsernameStatus(normalizedStatus);
-        if (normalizedStatus?.username) {
-          localStorage.setItem(usernameCacheKey(userId), normalizedStatus.username);
-          const pending = getPendingOnboarding();
-          if (pending && ((pending.userId && pending.userId === userId) || pending.email === userEmail)) {
-            localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-          }
+        if (!status || typeof status.username_chosen !== 'boolean') throw new Error('Your username status could not be confirmed.');
+        setUsernameStatus(status);
+        setUsernameError('');
+      } catch (error) {
+        if (mounted && version === loadVersion) {
+          setUsernameStatus(null);
+          setUsernameError(error.message || 'Could not check your username.');
         }
-      } catch (_) {
-        const cached = localStorage.getItem(usernameCacheKey(userId));
-        if (cached && mounted && version === loadVersion) setUsernameStatus({ username: cached, username_chosen: true });
       }
 
-      if (!staffPath) {
-        try {
-          const reward = await withTimeout(claimDailyReward(), REWARD_TIMEOUT_MS, 'Daily reward timed out.');
-          if (mounted && version === loadVersion && reward?.claimed) {
-            setRewardMessage(reward.reward_fav > 0 ? `Daily reward: +${reward.reward_fav} FAV` : 'Daily reward recorded.');
-            try {
-              const refreshedWallet = await withTimeout(getMyWallet(), WALLET_TIMEOUT_MS);
-              if (mounted && version === loadVersion) setWallet(refreshedWallet || null);
-            } catch (_) {}
-          }
-        } catch (rewardError) {
-          if (mounted && version === loadVersion && !String(rewardError?.message || '').toLowerCase().includes('already claimed')) {
-            setRewardMessage('Daily reward is unavailable right now.');
-          }
-        }
-      }
+      // Reward service helpers are retained; the unapproved reward UI was withdrawn.
+      // Never mutate the user's balance during authentication or token refresh.
+
     };
 
     const initializeSession = async () => {
@@ -189,15 +165,11 @@ export default function AppShell() {
         if (!nextSession) return;
 
         const sameUser = sessionUserRef.current === nextSession.user.id;
-        sessionUserRef.current = nextSession.user.id;
-        setSession(nextSession);
-
-        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
-
-        if (event === 'SIGNED_IN') {
-          if (!sameUser) hydrateSession(nextSession, { showLoader: true });
+        if (!sameUser) {
+          hydrateSession(nextSession, { showLoader: true });
           return;
         }
+        setSession(nextSession);
 
         if (event === 'USER_UPDATED') {
           hydrateSession(nextSession, { showLoader: false });
@@ -258,28 +230,24 @@ export default function AppShell() {
     return <><MiddlemanPanel /><PublicProfileHost session={session} /></>;
   }
 
-  const pending = getPendingOnboarding();
-  const onboardingPending = Boolean(pending && ((pending.userId && pending.userId === session.user.id) || pending.email === session.user.email?.toLowerCase()));
-
-  if (onboardingPending && !usernameStatus?.username) {
-    return <UsernameGate
+  if (!usernameStatus && !usernameError) {
+    return <FavouritLoader title="Connecting to Favourit" subtitle="Checking your secure account…" />;
+  }
+  if (!usernameStatus || usernameStatus.username_chosen !== true) {
+    return <UsernameGate key={session.user.id}
       displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''}
       email={usernameStatus?.email || session.user.email || ''}
-      onComplete={profileData => {
-        localStorage.removeItem(USERNAME_ONBOARDING_KEY);
-        localStorage.setItem(usernameCacheKey(session.user.id), profileData.username);
-        setUsernameStatus({ ...usernameStatus, ...profileData, username_chosen: true });
-      }}
+      initialError={usernameError}
+      onComplete={status => { setUsernameError(''); setUsernameStatus(status); }}
     />;
   }
 
   return <>
-    <App initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
+    <App key={`app:${session.user.id}`} initialWallet={wallet} session={session} rewardMessage={rewardMessage} usernameStatus={usernameStatus} />
     <UsernameManager status={usernameStatus} onChanged={status => {
-      localStorage.setItem(usernameCacheKey(session.user.id), status.username);
       setUsernameStatus(status);
     }} />
-    <DirectMessagingV2 session={session} />
+    <DirectMessagingV2 key={`messages:${session.user.id}`} session={session} />
     <DirectMessageBridge />
     <MessageRequestListBridge />
     <PrivateGroupBridge session={session} />
@@ -288,6 +256,6 @@ export default function AppShell() {
     <PublicProfileHost session={session} />
     <ActivityCenter />
     <FriendRequestCenter />
-    <SettingsLauncher session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
+    <SettingsLauncher key={`settings:${session.user.id}`} session={session} profile={profile} onProfileChanged={next => setProfile(next)} />
   </>;
 }
