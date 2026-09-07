@@ -14,9 +14,9 @@ The service examples and hero artwork are labelled illustrations. There are no t
 
 ## Validation at implementation
 
-The React suite passes all 32 tests, including the application receipt/error states and consent-aware admin exports. The measurement suite passes nine tests for cohort windows, exclusions and exact FAV arithmetic. The database regression passed inside a rollback transaction; a follow-up query confirmed no marketing schema or RPC remained after rollback. The workbook's formulas and all seven sheet layouts were checked with blank real-world results.
+The React suite passes all 32 tests, including the application receipt/error states and consent-aware admin exports. The measurement suite passes ten tests for cohort windows, exclusions and exact FAV arithmetic. The database regression passed inside a rollback transaction; a follow-up query confirmed no marketing schema or RPC remained after rollback. The workbook's formulas and all seven sheet layouts were checked with blank real-world results.
 
-The existing application's strict production build (`CI=true`) reports pre-existing hook dependency and unused-variable warnings in AccountSettings, AdminPanel, DirectMessagingV2, MiddlemanPanel, PrivateGroupBridge, PublicProfile and UsernameSection. Those are outside this marketing release. The undefined `globalThis` lint error was fixed with a declaration only; crypto behavior is unchanged. The CI workflow keeps its strict build gate. Do not merge or permanently apply the marketing migration until that required check passes. A private marketing preview can be reviewed while these release issues remain.
+The existing application's strict production build (`CI=true`) reports pre-existing hook dependency and unused-variable warnings in AccountSettings, AdminPanel, DirectMessagingV2, MiddlemanPanel, PrivateGroupBridge, PublicProfile and UsernameSection. Those are outside this marketing release. The undefined `globalThis` lint error was fixed with a declaration only; crypto behavior is unchanged. Inspection of the GitHub job log confirmed the failure was previously hidden by the logging pipeline. The build step now explicitly uses Bash with pipeline failure propagation so a failed compilation cannot become a green check. Do not merge or permanently apply the marketing migration until that required check passes. A private marketing preview can be reviewed while these release issues remain.
 
 ## Product work still required before real trading
 
@@ -89,7 +89,7 @@ Then run:
 node marketing/tools/metrics.cjs marketing/private/reviewed-input.json marketing/exports/weekly-metrics.json
 ```
 
-The tool calculates activation and repeat rates only for fully observed 30-day windows, and match rate only for fully observed seven-day windows. It excludes incomplete, test, reversed and unverified activity. Both order participants must appear in the reviewed member set; document this cohort boundary when comparing reports. Zero eligible denominators produce `null`, not a claimed zero-percent result.
+The tool calculates activation and repeat rates only for fully observed 30-day windows, and match rate only for fully observed seven-day windows. It excludes incomplete, test, reversed and unverified activity. Both order participants must appear in the reviewed member set and the order must be created after both acceptance times; document this cohort boundary when comparing reports. Zero eligible denominators produce `null`, not a claimed zero-percent result.
 
 Earn-then-spend means a sale completed before a later purchase was created and completed. This is a participation measure, not proof that earned funds rather than promotional balances paid for that purchase. `earnedSpendProvenance` is left null until a separately reconciled ledger report supports it. Do not label the journey count as audited FAV circulation. FAV volume is denominated in FAV and is not cash revenue.
 

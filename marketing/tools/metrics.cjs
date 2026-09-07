@@ -37,7 +37,8 @@ function measure(input) {
     if(completed<created)throw new Error('Order completion precedes creation');
     if(order.buyerId===order.sellerId)throw new Error('Self-orders cannot count as marketplace activity');
     if(completed>asOf||!memberMap.has(order.buyerId)||!memberMap.has(order.sellerId))continue;
-    if(!/^\d+$/.test(String(order.serviceAmountMicroFav)))throw new Error('FAV amounts must be nonnegative integer micro-FAV strings');
+    if(created<memberMap.get(order.buyerId).accepted||created<memberMap.get(order.sellerId).accepted)continue;
+    if(typeof order.serviceAmountMicroFav!=='string'||!/^\d+$/.test(order.serviceAmountMicroFav))throw new Error('FAV amounts must be nonnegative integer micro-FAV strings');
     orders.push({...order,created,completed});
   }
   orders.sort((a,b)=>a.completed-b.completed);
