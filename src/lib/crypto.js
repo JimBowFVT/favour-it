@@ -1,4 +1,6 @@
+/* global globalThis */
 import { supabase } from './supabase';
+export { parseFavInput, calculateCryptoUnlockQuote } from './favAmounts';
 
 export const BASE_SEPOLIA = {
   chainId: 84532,
@@ -9,37 +11,10 @@ export const BASE_SEPOLIA = {
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
 };
 
-const MICRO_FAV = 1_000_000;
-
 export function shortAddress(address = '') {
   const value = String(address);
   if (value.length < 12) return value;
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
-}
-
-export function parseFavInput(value) {
-  const input = String(value ?? '').trim();
-  if (!/^\d+(?:\.\d{0,6})?$/.test(input)) return null;
-  const [wholePart, fractionPart = ''] = input.split('.');
-  const whole = Number(wholePart);
-  if (!Number.isSafeInteger(whole) || whole < 0) return null;
-  const fraction = Number(fractionPart.padEnd(6, '0') || 0);
-  const micro = whole * MICRO_FAV + fraction;
-  return Number.isSafeInteger(micro) ? micro : null;
-}
-
-export function calculateCryptoUnlockQuote(grossMicroFav, feeBps = 250) {
-  const gross = Number(grossMicroFav || 0);
-  const bps = Number(feeBps || 0);
-  if (!Number.isSafeInteger(gross) || gross <= 0 || !Number.isFinite(bps) || bps < 0) {
-    return { gross_fav: 0, fee_fav: 0, net_fav: 0 };
-  }
-  const fee = Math.ceil((gross * bps) / 10000);
-  return {
-    gross_fav: gross,
-    fee_fav: fee,
-    net_fav: Math.max(0, gross - fee),
-  };
 }
 
 export function resolveEip1193Provider(provider = null) {
@@ -47,6 +22,12 @@ export function resolveEip1193Provider(provider = null) {
   const injected = typeof window !== 'undefined' ? window.ethereum : null;
   if (injected?.request) return injected;
   return null;
+}
+
+export async function getMyCryptoEligibility() {
+  const { data, error } = await supabase.rpc('get_my_account_eligibility');
+  if (error) throw error;
+  return data;
 }
 
 export async function getCryptoChainStatus() {

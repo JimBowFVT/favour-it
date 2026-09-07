@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { formatMicroFav } from './favAmounts';
 
 const MICRO_FAV = 1_000_000;
 
@@ -7,7 +8,7 @@ export function microFavToFav(value) {
 }
 
 export function formatFav(value) {
-  return microFavToFav(value).toLocaleString(undefined, { maximumFractionDigits: 6 });
+  return formatMicroFav(value);
 }
 
 export async function getMyWallet() {
@@ -37,6 +38,9 @@ export async function getMyFavBalanceBreakdown() {
     earned_fav: Number(value.earned_fav || 0),
     legacy_fav: Number(value.legacy_fav || 0),
     crypto_eligible_fav: Number(value.crypto_eligible_fav || 0),
+    crypto_maturing_fav: value.crypto_maturing_fav == null ? null : Number(value.crypto_maturing_fav),
+    next_crypto_eligible_at: value.next_crypto_eligible_at || null,
+    crypto_unlock_maturity_hours: value.crypto_unlock_maturity_hours == null ? null : Number(value.crypto_unlock_maturity_hours),
     pending_crypto_unlock_fav: Number(value.pending_crypto_unlock_fav || 0),
     crypto_unlock_fee_bps: Number(value.crypto_unlock_fee_bps || 0),
   };
