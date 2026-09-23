@@ -34,6 +34,7 @@ async function accountRpc(name, args, userId) {
   return requests.run(() => supabase.rpc(name, args));
 }
 export const getMyCryptoEligibility = userId => accountRpc('get_my_account_eligibility', {}, userId);
+export const getMyAgeEligibility = userId => accountRpc('get_my_age_eligibility', {}, userId);
 export const acceptCryptoConsent = userId => accountRpc('accept_crypto_consent', { p_version: 'crypto-v1' }, userId);
 export const getCryptoChainStatus = userId => accountRpc('get_crypto_chain_status', {}, userId);
 

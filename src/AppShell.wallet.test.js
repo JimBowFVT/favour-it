@@ -34,6 +34,16 @@ beforeEach(() => {
   getCurrentProfile.mockResolvedValue({profile:{display_name:'Fixture'},wallet:{available_fav:'1'}});
   getMyUsernameStatus.mockResolvedValue({username:'generated_name',username_chosen:false});
 });
+
+test('USER_UPDATED cannot dismiss an already displayed username choice', async () => {
+  render(<AppShell />);
+  expect(await screen.findByLabelText('Choose your username')).toBeInTheDocument();
+  getMyUsernameStatus.mockResolvedValue({ username: 'generated_name', username_chosen: true });
+  act(() => listener('USER_UPDATED', session));
+  await waitFor(() => expect(getMyUsernameStatus).toHaveBeenCalledTimes(2));
+  expect(screen.getByLabelText('Choose your username')).toBeInTheDocument();
+  expect(screen.queryByText('Authenticated workspace')).not.toBeInTheDocument();
+});
 test('generated usernames do not skip setup after reload or token refresh', async () => {
   localStorage.setItem('favourit_username:member-a','generated_name');
   render(<AppShell />);

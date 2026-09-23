@@ -65,6 +65,7 @@ export default function PrivateGroupBridge({ session }) {
   const [, setMuteVersion] = useState(0);
   const typingChannelRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const inboxWasMountedRef = useRef(false);
 
   const clearPrivateThread = () => {
     setInfoOpen(false);
@@ -96,9 +97,11 @@ export default function PrivateGroupBridge({ session }) {
         document.querySelectorAll('.private-groups-host').forEach(node => node.classList.remove('private-groups-host'));
         setHost(null);
         setPanel(null);
-        clearPrivateThread();
+        if (inboxWasMountedRef.current) clearPrivateThread();
+        inboxWasMountedRef.current = false;
         return;
       }
+      inboxWasMountedRef.current = true;
 
       const active = Boolean(groupsButton?.classList.contains('active'));
       if (!active) {
@@ -108,7 +111,7 @@ export default function PrivateGroupBridge({ session }) {
         return;
       }
       const empty = [...root.querySelectorAll('.dm-empty')].find(node => String(node.textContent || '').includes('private group')) || root.querySelector('.dm-empty');
-      if (empty) empty.classList.add('private-groups-host');
+      if (empty && !empty.classList.contains('private-groups-host')) empty.classList.add('private-groups-host');
       setHost(empty || null);
       setPanel(root);
     };
@@ -305,6 +308,7 @@ export default function PrivateGroupBridge({ session }) {
   const tabPortal = groupsTabHost ? createPortal(<span className={`private-group-tab-count ${groupUnread > 0 ? 'unread' : ''}`} title={groupUnread > 0 ? `${groupUnread} unread private group message${groupUnread === 1 ? '' : 's'}` : `${groups.length} private group${groups.length === 1 ? '' : 's'}`}>{groupUnread > 0 ? (groupUnread > 99 ? '99+' : groupUnread) : groups.length}</span>, groupsTabHost) : null;
 
   const groupsPortal = host ? createPortal(<div className="private-groups-list">
+    {error && !chat && !createOpen && <div className="dm-error" role="alert">{error}</div>}
     <div className="private-groups-toolbar">
       <div><strong>Private groups</strong><small>Group chats with friends, separate from public Communities.</small></div>
       <button className="primary small" type="button" onClick={openCreate}>+ New group</button>

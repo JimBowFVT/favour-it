@@ -67,6 +67,8 @@ jobs:
         run: npm ci
       - name: Test
         run: npm test -- --watchAll=false --runInBand
+      - name: Age policy and wallet regression tests
+        run: node --test tests/age-policy.test.cjs tests/wallet-core.test.cjs tests/ui-restoration.test.cjs
       - name: Build
         id: build
         shell: bash

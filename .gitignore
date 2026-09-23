@@ -29,3 +29,4 @@ yarn-error.log*
 
 # Local browser fixture output (never real financial records)
 /qa-output/
+/supabase/.temp/
