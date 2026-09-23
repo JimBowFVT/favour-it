@@ -116,7 +116,8 @@ function syncRequestRows() {
 function syncDecisionCopy() {
   const copy = document.querySelector('.dm-request-decision-copy small');
   if (!copy) return;
-  copy.textContent = 'Preview the message above. Accept to move it to Chats, decline to dismiss it, or block this account.';
+  const text = 'Preview the message above. Accept to move it to Chats, decline to dismiss it, or block this account.';
+  if (copy.textContent !== text) copy.textContent = text;
 }
 
 export default function MessageRequestListBridge() {

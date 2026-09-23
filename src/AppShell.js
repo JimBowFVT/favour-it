@@ -58,6 +58,8 @@ export default function AppShell() {
   const [uiReady, setUiReady] = useState(false);
   const [rewardMessage, setRewardMessage] = useState('');
   const sessionUserRef = useRef(null);
+  const usernameRevisionRef = useRef(0);
+  const usernameRequiredRef = useRef(false);
   const adminPath = isAdminPanelPath();
   const middlemanPath = isMiddlemanPanelPath();
   const staffPath = adminPath || middlemanPath;
@@ -71,6 +73,8 @@ export default function AppShell() {
     const clearSession = () => {
       loadVersion += 1;
       sessionUserRef.current = null;
+      usernameRevisionRef.current += 1;
+      usernameRequiredRef.current = false;
       if (!mounted) return;
       setSession(null);
       setWallet(null);
@@ -91,9 +95,12 @@ export default function AppShell() {
       const version = ++loadVersion;
       const userId = nextSession.user.id;
       if (sessionUserRef.current !== userId) {
+        usernameRevisionRef.current += 1;
+        usernameRequiredRef.current = false;
         setWallet(null); setProfile(null); setUsernameStatus(null); setUsernameError(''); setRewardMessage('');
       }
       sessionUserRef.current = userId;
+      const usernameRevision = usernameRevisionRef.current;
 
       if (mounted && version === loadVersion) {
         setSession(nextSession);
@@ -121,12 +128,14 @@ export default function AppShell() {
 
       try {
         const status = await withTimeout(getMyUsernameStatus(), USERNAME_STATUS_TIMEOUT_MS, 'Username setup is taking too long.');
-        if (!mounted || version !== loadVersion) return;
+        if (!mounted || version !== loadVersion || usernameRevision !== usernameRevisionRef.current) return;
         if (!status || typeof status.username_chosen !== 'boolean') throw new Error('Your username status could not be confirmed.');
-        setUsernameStatus(status);
+        if (status.username_chosen && !status.username?.trim()) throw new Error('Your username status could not be confirmed.');
+        if (status.username_chosen !== true) usernameRequiredRef.current = true;
+        setUsernameStatus(usernameRequiredRef.current ? { ...status, username_chosen: false } : status);
         setUsernameError('');
       } catch (error) {
-        if (mounted && version === loadVersion) {
+        if (mounted && version === loadVersion && usernameRevision === usernameRevisionRef.current) {
           setUsernameStatus(null);
           setUsernameError(error.message || 'Could not check your username.');
         }
@@ -238,7 +247,12 @@ export default function AppShell() {
       displayName={usernameStatus?.display_name || session.user.user_metadata?.display_name || ''}
       email={usernameStatus?.email || session.user.email || ''}
       initialError={usernameError}
-      onComplete={status => { setUsernameError(''); setUsernameStatus(status); }}
+      onComplete={status => {
+        if (!status?.username || status.username_chosen !== true) return;
+        usernameRevisionRef.current += 1;
+        usernameRequiredRef.current = false;
+        setUsernameError(''); setUsernameStatus(status);
+      }}
     />;
   }
 
@@ -250,7 +264,7 @@ export default function AppShell() {
     <DirectMessagingV2 key={`messages:${session.user.id}`} session={session} />
     <DirectMessageBridge />
     <MessageRequestListBridge />
-    <PrivateGroupBridge session={session} />
+    <PrivateGroupBridge key={`groups:${session.user.id}`} session={session} />
     <CommunityFinishBridge />
     <CommunityModeratorMessageBridge />
     <PublicProfileHost session={session} />

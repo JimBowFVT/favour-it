@@ -9,6 +9,7 @@ import {
   getCryptoChainStatus,
   getMyCryptoUnlocks,
   getMyCryptoWallet,
+  getMyAgeEligibility,
   parseFavInput,
   requestCryptoUnlock,
   shortAddress,
@@ -45,20 +46,24 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [ageEligibility, setAgeEligibility] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setAgeEligibility(null);
     try {
-      const [nextChain, nextWallet, nextBreakdown, nextUnlocks] = await Promise.all([
+      const [nextChain, nextWallet, nextBreakdown, nextUnlocks, nextAgeEligibility] = await Promise.all([
         getCryptoChainStatus(),
         getMyCryptoWallet(),
         getMyFavBalanceBreakdown(),
         getMyCryptoUnlocks(),
+        getMyAgeEligibility(),
       ]);
       setChain(nextChain);
       setWallet(nextWallet);
       setBreakdown(nextBreakdown);
       setUnlocks(nextUnlocks);
+      setAgeEligibility(nextAgeEligibility);
       setError('');
     } catch (loadError) {
       setError(loadError.message || 'Could not load crypto wallet status.');
@@ -81,7 +86,7 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
   const nextEligibleAt = breakdown?.next_crypto_eligible_at ? new Date(breakdown.next_crypto_eligible_at) : null;
   const deploymentVerified = Boolean(chain?.token_address && chain?.deployment_verified_at);
   const canUnlock = Boolean(
-    deploymentVerified &&
+    ageEligibility?.crypto_age_eligible === true && !loading && deploymentVerified &&
     chain?.unlock_enabled &&
     wallet?.is_active &&
     amountMicroFav &&
@@ -91,7 +96,7 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
   );
 
   const connect = async () => {
-    if (busy) return;
+    if (busy || loading || ageEligibility?.crypto_age_eligible !== true) return;
     setBusy(true);
     setError('');
     try {
@@ -160,6 +165,7 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
     </div>
 
     {loading ? <div className="crypto-wallet-loading">Loading crypto status…</div> : <>
+      {ageEligibility?.crypto_age_eligible !== true && <div className="crypto-notice" role="status"><strong>Crypto is available from age 18</strong><span>{ageEligibility?.birth_date_recorded ? 'You can continue buying and selling services with Favourit credits. Crypto buying, selling and conversion are unavailable until your 18th birthday.' : 'Your date of birth must be recorded before crypto access is available. Contact support to complete your age information. You can still use marketplace credits.'}</span></div>}
       <div className="crypto-wallet-stats">
         <div><small>CRYPTO ELIGIBLE</small><strong>{formatFav(eligible)} FAV</strong><span>mature seller earnings</span></div>
         <div><small>MATURING</small><strong>{formatFav(maturing)} FAV</strong><span>{maturityLabel ? `${maturityLabel} safety window` : 'policy not configured'}</span></div>
@@ -174,11 +180,11 @@ export default function CryptoWalletPanel({ onWalletChanged }) {
           {wallet ? <>
             <strong className="crypto-address">{shortAddress(wallet.wallet_address)}</strong>
             <small>{BASE_SEPOLIA.name} · verified {new Date(wallet.verified_at).toLocaleDateString()}</small>
-            <div className="crypto-wallet-actions"><button className="secondary" type="button" disabled={busy} onClick={connect}>Verify a different wallet</button><button className="text-button" type="button" disabled={busy || pending > 0} onClick={disconnect}>Disconnect</button></div>
+            <div className="crypto-wallet-actions"><button className="secondary" type="button" disabled={busy || ageEligibility?.crypto_age_eligible !== true} onClick={connect}>Verify a different wallet</button><button className="text-button" type="button" disabled={busy || pending > 0} onClick={disconnect}>Disconnect</button></div>
             {pending > 0 && <small>Finish or cancel pending unlocks before changing wallet state.</small>}
           </> : <>
             <p>Connect a testnet EVM wallet and sign a one-time message. The signature proves ownership and does not send a blockchain transaction.</p>
-            <button className="secondary full" type="button" disabled={busy} onClick={connect}>{busy ? 'Waiting for wallet…' : 'Connect & verify testnet wallet'}</button>
+            <button className="secondary full" type="button" disabled={busy || ageEligibility?.crypto_age_eligible !== true} onClick={connect}>{busy ? 'Waiting for wallet…' : 'Connect & verify testnet wallet'}</button>
           </>}
         </div>
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { signIn, signUp } from '../lib/auth';
+import { validateBirthDate } from '../lib/age';
 import { languages, normalizeLanguageCode } from '../data/languages';
 import FavouritLoader from './FavouritLoader';
 
@@ -13,6 +14,7 @@ function initialLanguage() { try { return normalizeLanguageCode(navigator.langua
 export default function AuthGate() {
   const [mode, setMode] = useState('login');
   const [displayName, setDisplayName] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [language, setLanguage] = useState(initialLanguage);
@@ -22,9 +24,14 @@ export default function AuthGate() {
 
   const submit = async event => {
     event.preventDefault();
+    if (busy) return;
     setError('');
     setMessage('');
     if (mode === 'signup' && !displayName.trim()) return setError('Please enter your display name.');
+    if (mode === 'signup') {
+      try { validateBirthDate(birthDate); }
+      catch (err) { return setError(err.message); }
+    }
     if (!email.trim() || !password) return setError('Enter your email and password.');
     if (password.length < 6) return setError('Password must be at least 6 characters.');
     setBusy(true);
@@ -33,14 +40,16 @@ export default function AuthGate() {
       const selectedLanguage = normalizeLanguageCode(language);
       const result = mode === 'login'
         ? await withTimeout(signIn(cleanEmail, password), AUTH_TIMEOUT_MS, 'Sign in timed out. Check your connection and try again.')
-        : await withTimeout(signUp(cleanEmail, password, displayName.trim(), selectedLanguage), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
+        : await withTimeout(signUp(cleanEmail, password, displayName.trim(), selectedLanguage, birthDate), AUTH_TIMEOUT_MS, 'Account creation timed out. Check your connection and try again.');
       if (result.error) throw result.error;
       if (mode === 'signup') {
-        window.localStorage.setItem('favourit_language', selectedLanguage);
-        window.localStorage.setItem('favourit:language', selectedLanguage);
-        const onboarding = JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() });
-        window.localStorage.setItem(USERNAME_ONBOARDING_KEY, onboarding);
-        window.localStorage.setItem(USERNAME_GATE_KEY, onboarding);
+        try {
+          window.localStorage.setItem('favourit_language', selectedLanguage);
+          window.localStorage.setItem('favourit:language', selectedLanguage);
+          const onboarding = JSON.stringify({ email: cleanEmail, userId: result.data?.user?.id || null, createdAt: Date.now() });
+          window.localStorage.setItem(USERNAME_ONBOARDING_KEY, onboarding);
+          window.localStorage.setItem(USERNAME_GATE_KEY, onboarding);
+        } catch (_) { /* Browser storage is optional; the server owns onboarding state. */ }
         if (!result.data?.session) {
           setMessage('Account created. Check your email to confirm your account, then sign in.');
           setMode('login');
@@ -63,6 +72,9 @@ export default function AuthGate() {
     <p>{mode === 'login' ? 'Sign in to your marketplace account.' : 'Create an account and turn your skills into purchasing power.'}</p>
     {mode === 'signup' && <>
       <input className="auth-input" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Display name" autoComplete="name" />
+      <label htmlFor="signup-birth-date">Date of birth</label>
+      <input id="signup-birth-date" className="auth-input" type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} autoComplete="bday" required />
+      <small style={{display:'block',marginBottom:10}}>You must be 13 or older. Members aged 13–17 can buy and sell services using credits. Crypto buying, selling and conversion require age 18+.</small>
       <select className="auth-input" value={language} onChange={e => setLanguage(e.target.value)} aria-label="Your language">{languages.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}</select>
       <small style={{display:'block',color:'#7f899c',margin:'-6px 0 10px',fontSize:11}}>Messages you translate will use this language. You can change it anytime in Settings.</small>
     </>}
